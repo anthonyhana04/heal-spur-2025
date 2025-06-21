@@ -30,77 +30,12 @@ export interface Env {
 	MY_BUCKET: R2Bucket; // R2 bucket binding defined in wrangler.toml / wrangler.json
 }
 
-interface GeminiTextRequest {
-	contents: {
-		parts: { text: string }[];
-	}[];
-}
-
-interface GeminiImageRequest {
-	contents: {
-		parts:
-		| { text: string }
-		| {
-			inlineData: { data: string; mimeType: string };
-		}[];
-	}[];
-}
-
-type GeminiRequest = GeminiTextRequest | GeminiImageRequest;
-
-import { GoogleGenAI } from "@google/genai";
-
 // Helpful CORS headers
 const CORS_HEADERS = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "POST, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
 };
-
-// Helper function to handle R2 operations
-async function handleR2Operations(request: Request, env: Env, key: string): Promise<Response> {
-	switch (request.method) {
-		case "PUT":
-			console.log(env);
-			await env.MY_BUCKET.put(key, request.body);
-			return new Response(`Put ${key} successfully!`, {
-				headers: CORS_HEADERS
-			});
-
-		case "GET":
-			const object = await env.MY_BUCKET.get(key);
-
-			if (object === null) {
-				return new Response("Object Not Found", {
-					status: 404,
-					headers: CORS_HEADERS
-				});
-			}
-
-			const headers = new Headers(CORS_HEADERS);
-			object.writeHttpMetadata(headers);
-			headers.set("etag", object.httpEtag);
-
-			return new Response(object.body, {
-				headers,
-			});
-
-		case "DELETE":
-			await env.MY_BUCKET.delete(key);
-			return new Response("Deleted!", {
-				headers: CORS_HEADERS
-			});
-
-		default:
-			return new Response("Method Not Allowed", {
-				status: 405,
-				headers: {
-					...CORS_HEADERS,
-					Allow: "PUT, GET, DELETE",
-				},
-			});
-	}
-}
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -110,13 +45,6 @@ export default {
 		}
 
 		const { pathname } = new URL(request.url);
-
-		// Handle R2 operations if path starts with /r2/
-		if (pathname.startsWith('/r2/')) {
-			const key = pathname.slice(3); // Remove '/r2' prefix
-			return handleR2Operations(request, env, key);
-		}
-
 		if (request.method !== "POST") {
 			return new Response("Method not allowed", { status: 405, headers: CORS_HEADERS });
 		}
@@ -125,8 +53,9 @@ export default {
 			if (pathname === "/upload") {
 				return await handleUpload(request, env);
 			}
-			// Default – proxy to Gemini generateContent
-			return await handleGenerate(request, env);
+			else {
+				throw new Error(`Unknown endpoint: ${pathname}`);
+			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Unknown error";
 			return new Response(JSON.stringify({ error: message }), {
@@ -136,32 +65,6 @@ export default {
 		}
 	},
 } satisfies ExportedHandler<Env>;
-
-/**
- * /generate – proxy request directly to gemini-pro or gemini-pro-vision depending on presence of image parts.
- */
-async function handleGenerate(request: Request, env: Env): Promise<Response> {
-	const requestData = (await request.json()) as GeminiRequest;
-
-	// Pick model based on presence of image parts
-	const hasImage = (requestData as any).contents?.[0]?.parts?.some(
-		(part: any) => "inlineData" in part && part.inlineData?.mimeType?.startsWith("image/")
-	);
-
-	const modelId = hasImage ? "gemini-pro-vision" : "gemini-pro";
-
-	// Use GoogleGenAI SDK
-	const ai = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-
-	const result = await ai.models.generateContent({
-		model: modelId,
-		contents: requestData.contents as any
-	});
-
-	return new Response(JSON.stringify(result), {
-		headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-	});
-}
 
 /**
  * /upload – persist file to R2 and forward it to Gemini Files API.
