@@ -1,0 +1,17 @@
+{
+  "name": "docs",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Swagger UI documentation server",
+  "dependencies": {
+    "express": "^4.18.3",
+    "swagger-ui-express": "^5.0.0",
+    "yaml": "^2.4.1"
+  }
+}

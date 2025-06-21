@@ -3,8 +3,9 @@
  *
  *  Endpoints
  *  ├─ POST /generate   – proxy a Gemini text/vision request (same shape as Gemini API).
- *  └─ POST /upload     – accept a base64-encoded file, persist it to Cloudflare R2 and forward it to
- *                         Gemini Files API. Returns the File object { name, uri, mimeType, … }.
+ *  ├─ POST /upload     – accept a base64-encoded file, persist it to Cloudflare R2 and forward it to
+ *  │                     Gemini Files API. Returns the File object { name, uri, mimeType, … }.
+ *  └─ /r2/*           – Direct R2 bucket operations (GET/PUT/DELETE)
  *
  *  The /upload route expects JSON of the form:
  *  {
@@ -53,10 +54,8 @@ interface GeminiImageRequest {
 
 type GeminiRequest = GeminiTextRequest | GeminiImageRequest;
 
-const GEMINI_PRO_URL =
-	"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent";
-const GEMINI_PRO_VISION_URL =
-	"https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent";
+import { GoogleGenAI } from "@google/genai";
+
 const GEMINI_FILE_UPLOAD_URL =
 	"https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart";
 
@@ -67,6 +66,50 @@ const CORS_HEADERS = {
 	"Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Helper function to handle R2 operations
+async function handleR2Operations(request: Request, env: Env, key: string): Promise<Response> {
+	switch (request.method) {
+		case "PUT":
+			await env.MY_BUCKET.put(key, request.body);
+			return new Response(`Put ${key} successfully!`, {
+				headers: CORS_HEADERS
+			});
+
+		case "GET":
+			const object = await env.MY_BUCKET.get(key);
+
+			if (object === null) {
+				return new Response("Object Not Found", { 
+					status: 404,
+					headers: CORS_HEADERS
+				});
+			}
+
+			const headers = new Headers(CORS_HEADERS);
+			object.writeHttpMetadata(headers);
+			headers.set("etag", object.httpEtag);
+
+			return new Response(object.body, {
+				headers,
+			});
+
+		case "DELETE":
+			await env.MY_BUCKET.delete(key);
+			return new Response("Deleted!", {
+				headers: CORS_HEADERS
+			});
+
+		default:
+			return new Response("Method Not Allowed", {
+				status: 405,
+				headers: {
+					...CORS_HEADERS,
+					Allow: "PUT, GET, DELETE",
+				},
+			});
+	}
+}
+
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		// Handle CORS pre-flight
@@ -74,11 +117,17 @@ export default {
 			return new Response(null, { headers: CORS_HEADERS });
 		}
 
+		const { pathname } = new URL(request.url);
+
+		// Handle R2 operations if path starts with /r2/
+		if (pathname.startsWith('/r2/')) {
+			const key = pathname.slice(3); // Remove '/r2' prefix
+			return handleR2Operations(request, env, key);
+		}
+
 		if (request.method !== "POST") {
 			return new Response("Method not allowed", { status: 405, headers: CORS_HEADERS });
 		}
-
-		const { pathname } = new URL(request.url);
 
 		try {
 			if (pathname === "/upload") {
@@ -102,22 +151,22 @@ export default {
 async function handleGenerate(request: Request, env: Env): Promise<Response> {
 	const requestData = (await request.json()) as GeminiRequest;
 
-	// Simple heuristic – if any part contains inlineData with an image mime type we switch to vision model.
+	// Pick model based on presence of image parts
 	const hasImage = (requestData as any).contents?.[0]?.parts?.some(
 		(part: any) => "inlineData" in part && part.inlineData?.mimeType?.startsWith("image/")
 	);
 
-	const apiUrl = hasImage ? GEMINI_PRO_VISION_URL : GEMINI_PRO_URL;
+	const modelId = hasImage ? "gemini-pro-vision" : "gemini-pro";
 
-	const upstream = await fetch(`${apiUrl}?key=${env.GOOGLE_API_KEY}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(requestData),
+	// Use GoogleGenAI SDK
+	const ai = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
+
+	const result = await ai.models.generateContent({
+		model: modelId,
+		contents: requestData.contents as any
 	});
 
-	const data = await upstream.json();
-
-	return new Response(JSON.stringify(data), {
+	return new Response(JSON.stringify(result), {
 		headers: { "Content-Type": "application/json", ...CORS_HEADERS },
 	});
 }

@@ -9,7 +9,13 @@
 	"compatibility_date": "2025-06-20",
 	"observability": {
 		"enabled": true
-	}
+	},
+	"r2_buckets": [
+    {
+      "binding": "MY_BUCKET",
+      "bucket_name": "heal-spur-2025"
+    }
+  ]
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
