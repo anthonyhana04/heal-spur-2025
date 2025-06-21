@@ -3,14 +3,14 @@ info:
   title: Gemini API Proxy
   description: |
     Cloudflare Worker proxy for Google Gemini API with R2 file upload support.
-    
+
     This API provides three main functionalities:
     - `/generate` for text and vision requests to Gemini
     - `/upload` for file uploads to R2 and Gemini Files API
     - `/r2/*` for direct R2 bucket operations
   version: 1.0.0
 servers:
-  - url: https://d99b994d-heal-spur-2025.anthonyhana04.workers.dev/
+  - url: https://heal-spur-2025.anthonyhana04.workers.dev/
     description: Production server
   - url: http://localhost:8787
     description: Local development server
@@ -291,4 +291,4 @@ components:
       properties:
         error:
           type: string
-          description: Error message 
+          description: Error message

@@ -16,8 +16,6 @@
  *  }
  */
 
-// Typing hack for dev console check (augment global ImportMeta)
-console.log("import.meta.env", import.meta.env);
 
 declare global {
 	interface ImportMeta {
@@ -25,10 +23,6 @@ declare global {
 			MODE?: string;
 		};
 	}
-}
-
-if (import.meta.env?.MODE === "dev") {
-	console.log("GOOGLE_API_KEY loaded?", !!(globalThis as any).GOOGLE_API_KEY);
 }
 
 export interface Env {
@@ -45,19 +39,16 @@ interface GeminiTextRequest {
 interface GeminiImageRequest {
 	contents: {
 		parts:
-			| { text: string }
-			| {
-					inlineData: { data: string; mimeType: string };
-			  }[];
+		| { text: string }
+		| {
+			inlineData: { data: string; mimeType: string };
+		}[];
 	}[];
 }
 
 type GeminiRequest = GeminiTextRequest | GeminiImageRequest;
 
 import { GoogleGenAI } from "@google/genai";
-
-const GEMINI_FILE_UPLOAD_URL =
-	"https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart";
 
 // Helpful CORS headers
 const CORS_HEADERS = {
@@ -70,6 +61,7 @@ const CORS_HEADERS = {
 async function handleR2Operations(request: Request, env: Env, key: string): Promise<Response> {
 	switch (request.method) {
 		case "PUT":
+			console.log(env);
 			await env.MY_BUCKET.put(key, request.body);
 			return new Response(`Put ${key} successfully!`, {
 				headers: CORS_HEADERS
@@ -79,7 +71,7 @@ async function handleR2Operations(request: Request, env: Env, key: string): Prom
 			const object = await env.MY_BUCKET.get(key);
 
 			if (object === null) {
-				return new Response("Object Not Found", { 
+				return new Response("Object Not Found", {
 					status: 404,
 					headers: CORS_HEADERS
 				});
@@ -179,10 +171,9 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 		fileName: string;
 		mimeType: string;
 		data: string; // base64
-		displayName?: string;
 	}>();
 
-	const { fileName, mimeType, data, displayName } = body;
+	const { fileName, mimeType, data } = body;
 	if (!fileName || !mimeType || !data) {
 		return new Response(
 			JSON.stringify({ error: "fileName, mimeType and data fields are required" }),
@@ -191,39 +182,25 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 	}
 
 	// Decode base64 → ArrayBuffer
-	const binary = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-
-	// Persist in R2 (the key will be the original filename with a timestamp prefix to avoid collisions)
-	const r2Key = `${Date.now()}_${fileName}`;
+	const binaryString = atob(data);
+	const binary = new Uint8Array(binaryString.length);
+	for (let i = 0; i < binaryString.length; i++) {
+		binary[i] = binaryString.charCodeAt(i);
+	}
+	// Persist in R2 (the key will be the original filename with uuid prefix)
+	const r2Key = `${crypto.randomUUID()}-${fileName}`;
 	await env.MY_BUCKET.put(r2Key, binary, {
 		httpMetadata: { contentType: mimeType },
 	});
-
-	// Prepare multipart upload body for Gemini Files API
-	const meta = {
-		file: {
-			display_name: displayName ?? fileName,
-		},
-	};
-
-	const form = new FormData();
-	form.append("metadata", new Blob([JSON.stringify(meta)], { type: "application/json" }));
-	form.append("file", new Blob([binary], { type: mimeType }), fileName);
-
-	const geminiRes = await fetch(`${GEMINI_FILE_UPLOAD_URL}&key=${env.GOOGLE_API_KEY}`, {
-		method: "POST",
-		body: form,
-	});
-
-	const geminiJson = (await geminiRes.json()) as any;
-
-	if (!geminiRes.ok) {
-		throw new Error(geminiJson.error?.message ?? `Gemini upload failed with status ${geminiRes.status}`);
-	}
-
-	// Return the Gemini File object along with the R2 key (in case client wants to reference it later)
 	return new Response(
-		JSON.stringify({ file: geminiJson.file, r2Key }),
-		{ headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		JSON.stringify({
+			name: fileName,
+			mimeType,
+			r2Key, // Include R2 key for reference
+		}),
+		{
+			status: 200,
+			headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+		}
 	);
 }
