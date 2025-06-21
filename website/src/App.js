@@ -3,18 +3,34 @@ import Lottie from 'lottie-react'
 import Camera from './camera.json'
 import Start from './start.js'
 import Login from './login.js'
-import SignUp from './signup.js'
 import Logo from './logo.png'
 import { useRef } from 'react'
 import { useNavigate} from 'react-router-dom';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Parallax, ParallaxLayer } from '@react-spring/parallax'
+import { useAuth0 } from '@auth0/auth0-react';
 
 const AppContainer = () => {
   const navigate = useNavigate();
+  const { loginWithRedirect, logout, isAuthenticated, isLoading } = useAuth0();
+  
   function handleClick(){
     ref.current.scrollTo(0);
   }
+
+  const handleLogin = async () => {
+    try {
+      console.log('Attempting to login with Auth0...');
+      await loginWithRedirect();
+    } catch (err) {
+      console.error('Login error:', err);
+      alert('Login failed. Please check your Auth0 configuration.');
+    }
+  };
+
+  const handleLogout = () => {
+    logout({ logoutParams: { returnTo: window.location.origin } });
+  };
 
   const ref = useRef();
 
@@ -83,12 +99,19 @@ const AppContainer = () => {
             <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-12' />
       </div>  
       <div className='absolute top-4 right-4 flex items-center gap-4'>
-            <button className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={()=>navigate('/login')}>
-              Login
-            </button>
-            <button className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={()=>navigate('/signup')}>
-              Sign Up
-            </button>
+            {!isLoading && (
+              <>
+                {!isAuthenticated ? (
+                  <button className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={handleLogin}>
+                    Login
+                  </button>
+                ) : (
+                  <button className='bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition transform hover:scale-105' onClick={handleLogout}>
+                    Logout
+                  </button>
+                )}
+              </>
+            )}
           </div>
     </div>
   )
@@ -100,7 +123,6 @@ const App = () => {
       <Routes>
         <Route path='/' element={<AppContainer />} />
         <Route path='/start' element={<Start />} />
-        <Route path='/signup' element={<SignUp/>}/>
         <Route path='/login' element={<Login/>}/>
       </Routes>
     </BrowserRouter>
