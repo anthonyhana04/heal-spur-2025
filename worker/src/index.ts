@@ -135,7 +135,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		}
 
 		// Get conversation history
-		const { messages } = await getMessages(env, userId, roomId);
+		const { messages } = await getMessages(env, userId, roomId, null, 16);
 
 		// Convert messages to Gemini format
 		const contents = await Promise.all(messages.map(async (item: ChatMessage) => {
