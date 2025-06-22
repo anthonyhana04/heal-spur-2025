@@ -16,7 +16,7 @@
  *	}
  */
 import { AutoRouter } from 'itty-router'
-import { GoogleGenAI } from '@google/genai';
+import { createPartFromUri, GoogleGenAI } from '@google/genai';
 import { saveMessage, getMessages, saveRoom, getRooms, ChatMessage } from './storage';
 import { uuidv7 } from 'uuidv7';
 
@@ -84,11 +84,22 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 	await env.MY_BUCKET.put(r2Key, binary, {
 		httpMetadata: { contentType: mimeType },
 	});
+	const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
+	// Forward to Gemini Files API
+	// Note: Gemini Files API expects a file object with a specific structure
+	// Create the file in Gemini
+	const response = await genAI.files.upload({
+		file: `${env.BUCKET_URL}/${r2Key}`,
+		config: {
+			name: fileName,
+			mimeType,
+		},
+	});
 	return new Response(
 		JSON.stringify({
 			name: fileName,
 			mimeType,
-			imageUrl: `${env.BUCKET_URL}/${r2Key}`, // URL to access the file
+			imageUrl: response.uri, // URL to access the file
 		}),
 		{
 			status: 200,
@@ -113,12 +124,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const contents = messages.map((item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
 			if (item.imageUrl && item.mimeType) {
-				parts.push({
-					fileData: {
-						mimeType: item.mimeType,
-						fileUri: item.imageUrl,
-					},
-				});
+				parts.push(createPartFromUri(item.imageUrl, item.mimeType));
 			}
 			return {
 				parts,
