@@ -17,7 +17,7 @@
  */
 import { AutoRouter } from 'itty-router'
 import { GoogleGenAI } from '@google/genai';
-import { saveMessage, getMessages, saveRoom, getRooms } from './storage';
+import { saveMessage, getMessages, saveRoom, getRooms, ChatMessage } from './storage';
 import { uuidv7 } from 'uuidv7';
 
 const router = AutoRouter()
@@ -110,12 +110,12 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const { roomId, content, key, mimeType } = (await request.json() as any);
 		await saveMessage(env, userId, roomId, "user", content, mimeType, key);
 		const { messages } = (await getMessages(env, userId, roomId));
-		const contents = messages.map((item: any) => {
+		const contents = messages.map((item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
-			if (item.key && item.mimeType) {
+			if (item.imageUrl && item.mimeType) {
 				const fileData = {
 					mimeType: item.mimeType,
-					url: `${env.BUCKET_URL}${item.key}`,
+					url: item.imageUrl,
 				};
 				parts.push(fileData);
 			}

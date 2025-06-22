@@ -116,7 +116,15 @@ export async function getMessages(env: Env, userId: string, roomId: string, curs
 	const msgs: ChatMessage[] = [];
 	for (const { name } of list.keys) {
 		const raw = await env.CHAT_LOGS.get(name);
-		if (raw) msgs.push(JSON.parse(raw));
+		const obj = JSON.parse(raw || '{}');
+		if (raw) msgs.push({
+			id: obj.id,
+			role: obj.role,
+			content: obj.content,
+			imageUrl: `${env.BUCKET_URL}/${obj.key}`, // Assuming the image URL is constructed this way
+			mimeType: obj.mimeType,
+			timestamp: obj.timestamp,
+		});
 	}
 	msgs.sort((a, b) => a.timestamp - b.timestamp);
 	return {
