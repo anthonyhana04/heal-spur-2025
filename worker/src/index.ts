@@ -107,8 +107,8 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 		}
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		const { roomId, content, key, mimeType } = (await request.json() as any);
-		await saveMessage(env, userId, roomId, "user", content, mimeType, key);
+		const { roomId, content, imageUrl, mimeType } = (await request.json() as any);
+		await saveMessage(env, userId, roomId, "user", content, mimeType, imageUrl);
 		const { messages } = (await getMessages(env, userId, roomId));
 		const contents = messages.map((item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
