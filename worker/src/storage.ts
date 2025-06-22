@@ -84,14 +84,15 @@ export async function getRooms(env: Env, userId: string): Promise<RoomMeta[]> {
 /**
  * Saves a single message in a room and updates the room's `updatedAt` timestamp.
  */
-export async function saveMessage(env: Env, userId: string, roomId: string, role: Role, content: string, mimeType: string, imageUrl?: string): Promise<ChatMessage> {
+export async function saveMessage(env: Env, userId: string, roomId: string, role: Role, content: string, mimeType?: string, key?: string): Promise<ChatMessage> {
 	const id = uuidv7();
 	const msg: ChatMessage = {
 		id,
 		role,
 		content,
 		mimeType,
-		...(imageUrl ? { imageUrl } : {}),
+		...(key ? { key: key } : {}),
+		...(mimeType ? { mimeType: mimeType } : {}),
 		timestamp: Date.now(),
 	};
 	// Store message

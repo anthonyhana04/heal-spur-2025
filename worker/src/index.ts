@@ -111,10 +111,10 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const { messages } = (await getMessages(env, userId, roomId));
 		const contents = messages.map((item: any) => {
 			const parts: any = [{ text: item.content }];
-			if (item.url && item.mimeType) {
+			if (item.key && item.mimeType) {
 				const fileData = {
 					mimeType: item.mimeType,
-					fileUri: `${item.url}`,
+					key: `${item.key}`,
 				};
 				parts.push(fileData);
 			}
@@ -123,31 +123,38 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 				role: item.role,
 			};
 		});
-		const response = await genAI.models.generateContentStream({
+		const response = await genAI.models.generateContent({
 			model: "gemini-2.5-flash",
 			contents: contents,
 		});
-		const { readable, writable } = new TransformStream();
-		const writer = writable.getWriter();
-		for await (const chunk of response) {
-			if (chunk.text !== undefined) {
-				const text = chunk.text;
-				const responseChunk = { text };
-				await writer.write(JSON.stringify(responseChunk) + "\n");
-			} else {
-				console.warn("Unexpected chunk format:", chunk);
+		const contentOut = response.text ?? "";
+		let msg;
+		if (response.data) {
+			const data = response.data; // base64 encoded file data
+			// Decode base64 → ArrayBuffer
+			const binaryString = atob(data);
+			const binary = new Uint8Array(binaryString.length);
+			for (let i = 0; i < binaryString.length; i++) {
+				binary[i] = binaryString.charCodeAt(i);
 			}
+			const fileName = "generated-file"; // Fallback name if not provided
+			// Persist in R2 (the key will be the original filename with uuid prefix)
+			const r2Key = `${crypto.randomUUID()}-${fileName}`;
+			await env.MY_BUCKET.put(r2Key, binary, {
+				httpMetadata: { contentType: mimeType },
+			});
+			msg = await saveMessage(env, userId, roomId, "model", contentOut, "image/jpg", r2Key);
+		} else {
+			msg = await saveMessage(env, userId, roomId, "model", contentOut);
 		}
-		await writer.close();
-		return new Response(readable, {
-			status: 200,
-			headers: {
-				"Content-Type": "application/json",
-				...CORS_HEADERS,
-				"Cache-Control": "no-cache",
-				"Transfer-Encoding": "chunked",
-			},
-		});
+
+		return new Response(
+			JSON.stringify(msg),
+			{
+				status: 200,
+				headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+			}
+		);
 	} catch (error) {
 		return new Response(
 			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
