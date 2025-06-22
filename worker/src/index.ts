@@ -48,7 +48,7 @@ export interface Env {
 const CORS_HEADERS = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type, Authorization",
+	"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-Id",
 };
 
 export default router satisfies ExportedHandler<Env>;
@@ -100,7 +100,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
  */
 async function handleGenerate(request: Request, env: Env): Promise<Response> {
 	try {
-		const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+		const userId = await getUserIdFromSession(request, env);
 		if (!userId) {
 			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 		}
@@ -160,7 +160,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 
 async function createRoom(request: Request, env: Env): Promise<Response> {
 	const body = await request.json<{ initialTitle: string | null }>();
-	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	const userId = await getUserIdFromSession(request, env);
 	if (!userId) {
 		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 	}
@@ -182,7 +182,7 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
  * /rooms – get all rooms for a user.
  */
 async function listRooms(request: Request, env: Env): Promise<Response> {
-	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	const userId = await getUserIdFromSession(request, env);
 	if (!userId) {
 		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 	}
@@ -204,7 +204,7 @@ async function listRooms(request: Request, env: Env): Promise<Response> {
  * listMessages – get all messages in a room with pagination.
  */
 async function listMessages(request: Request, env: Env): Promise<Response> {
-	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	const userId = await getUserIdFromSession(request, env);
 	if (!userId) {
 		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 	}
@@ -334,4 +334,19 @@ async function loginUser(request: Request, env: Env): Promise<Response> {
 		status: 200,
 		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
 	});
+}
+
+async function getSessionId(request: Request): Promise<string | null> {
+	const header = request.headers.get('X-Session-Id');
+	if (header) return header;
+	const auth = request.headers.get('Authorization');
+	if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
+	return null;
+}
+
+async function getUserIdFromSession(request: Request, env: Env): Promise<string | null> {
+	const sessionId = await getSessionId(request);
+	if (!sessionId) return null;
+	const username = await env.CHAT_LOGS.get(sessionKey(sessionId));
+	return username ?? null;
 }
