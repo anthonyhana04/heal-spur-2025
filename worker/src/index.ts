@@ -149,6 +149,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			if (item.imageUrl && item.mimeType) {
 				// item.imageUrl contains the R2 key
 				const obj = await env.MY_BUCKET.get(item.imageUrl);
+				console.log("obj", obj);
 				if (obj) {
 					// Get the base64 data directly from R2
 					const base64Data = await obj.text();
