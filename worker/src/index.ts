@@ -75,15 +75,9 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 		);
 	}
 
-	// Decode base64 → ArrayBuffer
-	const binaryString = atob(data);
-	const binary = new Uint8Array(binaryString.length);
-	for (let i = 0; i < binaryString.length; i++) {
-		binary[i] = binaryString.charCodeAt(i);
-	}
 	// Persist in R2 (the key will be the original filename with uuid prefix)
 	const r2Key = `${crypto.randomUUID()}-${fileName}`;
-	await env.MY_BUCKET.put(r2Key, binary, {
+	await env.MY_BUCKET.put(r2Key, data, {
 		httpMetadata: { contentType: mimeType },
 	});
 	const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
@@ -316,13 +310,6 @@ async function handleImageUpload(request: Request, env: Env): Promise<Response> 
 			);
 		}
 
-		// Decode base64 → ArrayBuffer
-		const binaryString = atob(data);
-		const binary = new Uint8Array(binaryString.length);
-		for (let i = 0; i < binaryString.length; i++) {
-			binary[i] = binaryString.charCodeAt(i);
-		}
-
 		// Determine MIME type based on file extension
 		const mimeTypes: { [key: string]: string } = {
 			'.jpg': 'image/jpeg',
@@ -335,7 +322,7 @@ async function handleImageUpload(request: Request, env: Env): Promise<Response> 
 
 		// Generate a unique key for R2 storage
 		const r2Key = `${uuidv7()}-${fileName}`;
-		await env.MY_BUCKET.put(r2Key, binary, {
+		await env.MY_BUCKET.put(r2Key, data, {
 			httpMetadata: { contentType: mimeType }
 		});
 
