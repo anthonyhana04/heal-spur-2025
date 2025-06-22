@@ -16,8 +16,7 @@
  *	}
  */
 import { AutoRouter } from 'itty-router'
-import { GoogleGenAI, Modality } from '@google/genai';
-import { uuidv7 } from 'uuidv7';
+import { GoogleGenAI } from '@google/genai';
 
 const router = AutoRouter()
 router
@@ -90,88 +89,55 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 }
 
 /**
- * Handle chat requests to the Google Gemini API.
- * This function expects a POST request with a JSON body containing:
- * {
- * 	"prompt": "Your text prompt here",
- * 	"url": "Optional URL to an image",
- * 	"mimeType": "Optional MIME type of the image (e.g., 'image/jpeg')"
- * 	}
- * 	It returns a stream of text responses from the Gemini API.
-*/
-async function handleChat(request: Request, env: Env): Promise<Response> {
-	const { room, prompt, url, mimeType } = (await request.json() as any);
-	env.CHAT_LOGS.put(uuidv7(), JSON.stringify({ room, prompt, url, mimeType, role: "user" }));
-	const history = await env.CHAT_LOGS.list({ prefix: room, limit: 32 });
-	const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-	const chat = genAI.chats.create({
-		model: "gemini-2.5-flash",
-		history: history.keys.map((key) => {
-			return JSON.parse(key.name);
-		})
-	});
-	/**
-	 * /generate – proxy a Gemini text/vision request.
-	 */
-	async function handleGenerate(request: Request, env: Env): Promise<Response> {
-		const { prompt, url, mimeType } = (await request.json() as any);
+ * /generate – proxy a Gemini text/vision request.
+ */
+async function handleGenerate(request: Request, env: Env): Promise<Response> {
+	try {
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		try {
-			const contents = [prompt];
-			if (url !== undefined) {
-				// If a URL is provided, use it to fetch the image data
-				const imgResp = await fetch(url);
-				if (!imgResp.ok) {
-					return new Response(
-						JSON.stringify({ error: `Failed to fetch image (${imgResp.status})` }),
-						{ status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-					);
-				}
-
-				const arrayBuffer = await imgResp.arrayBuffer();
-				const bytes = new Uint8Array(arrayBuffer);
-				const uploadedFile: any = await (genAI as any).files.upload({
-					file: bytes,
-					config: { mimeType },
-				});
-
-
-				const imagePart = {
-					fileData: {
-						mimeType: mimeType,
-						fileUri: uploadedFile.uri,
-					},
+		const { roomId, prompt, url, mimeType } = (await request.json() as any);
+		await saveMessages(env, userId, roomId, role, content, mimeType, url);
+		const contents = (await getMessages(env, roomId)).map((item: any) => {
+			const parts: any = [{ text: item.content }];
+			if (item.url && item.mimeType) {
+				const fileData = {
+					mimeType: item.mimeType,
+					fileUri: `${item.url}`,
 				};
-				contents.push(imagePart);
+				parts.push(fileData);
 			}
-			const response = await genAI.models.generateContentStream({
-				model: "gemini-2.5-flash",
-				contents: contents,
-			});
-			const { readable, writable } = new TransformStream();
-			for await (const chunk of response) {
-				if (chunk.text !== undefined) {
-					const text = chunk.text;
-					const responseChunk = { text };
-					writable.getWriter().write(JSON.stringify(responseChunk) + "\n");
-				}
-				else {
-					// Handle unexpected chunk format
-					console.warn("Unexpected chunk format:", chunk);
-				}
+			return {
+				parts,
+				role: item.role,
+			};
+		});
+		const response = await genAI.models.generateContentStream({
+			model: "gemini-2.5-flash",
+			contents: contents,
+		});
+		const { readable, writable } = new TransformStream();
+		for await (const chunk of response) {
+			if (chunk.text !== undefined) {
+				const text = chunk.text;
+				const responseChunk = { text };
+				writable.getWriter().write(JSON.stringify(responseChunk) + "\n");
 			}
-			return new Response(readable, {
-				status: 200,
-				headers: {
-					"Content-Type": "application/json",
-					...CORS_HEADERS,
-					"Cache-Control": "no-cache",
-				},
-			});
-		} catch (error) {
-			return new Response(
-				JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-				{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-			);
+			else {
+				// Handle unexpected chunk format
+				console.warn("Unexpected chunk format:", chunk);
+			}
 		}
+		return new Response(readable, {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				...CORS_HEADERS,
+				"Cache-Control": "no-cache",
+			},
+		});
+	} catch (error) {
+		return new Response(
+			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		);
 	}
+}
