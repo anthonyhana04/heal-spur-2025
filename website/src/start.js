@@ -55,17 +55,17 @@ const Start = () => {
   };
 
   return (
-    <div className='h-screen animated-gradient relative flex flex-col items-center justify-center p-4'>
+    <div className='h-screen animated-gradient relative flex flex-col items-center justify-center p-4 overflow-hidden'>
       <div 
-        className='absolute top-4 left-4 cursor-pointer transition transform hover:scale-125'
+        className='absolute top-4 left-4 cursor-pointer transition transform hover:scale-125 z-10'
         onClick={() => navigate('/')}
       >
-        <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-12' />
+        <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-8 sm:h-10 lg:h-12' />
       </div>
 
-      <div className='flex flex-row items-center justify-center w-full gap-8 mb-8'>
+      <div className='flex flex-col lg:flex-row items-center justify-center w-full gap-3 lg:gap-6 mb-4 lg:mb-6 mt-12 lg:mt-0'>
         {/* Webcam on the left */}
-        <div className='w-[600px] h-[600px] rounded-3xl overflow-hidden bg-black'>
+        <div className='w-full max-w-xs sm:max-w-sm md:max-w-md lg:w-[500px] h-52 sm:h-60 md:h-72 lg:h-[500px] rounded-2xl overflow-hidden bg-black'>
           {turnOnCam ? (
             <Webcam
               audio={false}
@@ -74,7 +74,7 @@ const Start = () => {
             />
           ) : (
             <button 
-              className='w-full h-full text-white text-2xl font-bold flex items-center justify-center' 
+              className='w-full h-full text-white text-sm sm:text-base lg:text-xl font-bold flex items-center justify-center px-2' 
               onClick={() => setTurnOnCam(true)}
             >
               Press to turn on Camera
@@ -84,7 +84,7 @@ const Start = () => {
         
         {/* Dropzone on the right */}
         <div 
-          className={`w-[600px] h-[600px] rounded-3xl border-4 border-dashed flex flex-col items-center justify-center text-gray-400 transition-colors cursor-pointer ${isDragging ? 'border-blue-500 bg-gray-800/50' : 'border-gray-600'}`}
+          className={`w-full max-w-xs sm:max-w-sm md:max-w-md lg:w-[500px] h-52 sm:h-60 md:h-72 lg:h-[500px] rounded-2xl border-4 border-dashed flex flex-col items-center justify-center text-gray-400 transition-colors cursor-pointer ${isDragging ? 'border-blue-500 bg-gray-800/50' : 'border-gray-600'}`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}
@@ -99,23 +99,23 @@ const Start = () => {
             accept="image/*"
           />
           {uploadedImage ? (
-            <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover rounded-2xl" />
+            <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover rounded-xl" />
           ) : (
             <>
-              <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-              <p className="text-center">Drag & drop an image here</p>
-              <p className="text-sm">or</p>
-              <p className="font-bold text-blue-500">Click to browse</p>
+              <svg className="w-6 h-6 sm:w-8 sm:h-8 lg:w-12 lg:h-12 mb-1 sm:mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+              <p className="text-center text-xs sm:text-sm lg:text-base">Drag & drop an image here</p>
+              <p className="text-xs">or</p>
+              <p className="font-bold text-blue-500 text-xs sm:text-sm lg:text-base">Click to browse</p>
             </>
           )}
         </div>
       </div>
 
       {/* Object Input Form */}
-      <form onSubmit={onSubmit} className="w-full max-w-2xl bg-gray-900/50 p-4 rounded-lg shadow-lg text-white flex items-center gap-4">
-        <label htmlFor="object-input" className='font-bold flex-shrink-0'>Enter desired object:</label>
-        <input id="object-input" name='object' className='w-full p-2 rounded bg-gray-800 border border-gray-700 text-white' placeholder='e.g., "a water bottle"' required/>
-        <button type="submit" className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105'>Identify</button>
+      <form onSubmit={onSubmit} className="w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg bg-gray-900/50 p-3 rounded-lg shadow-lg text-white flex flex-col sm:flex-row items-center gap-3">
+        <label htmlFor="object-input" className='font-bold flex-shrink-0 text-xs sm:text-sm lg:text-base'>Enter desired object:</label>
+        <input id="object-input" name='object' className='w-full p-2 rounded bg-gray-800 border border-gray-700 text-white text-xs sm:text-sm lg:text-base' placeholder='e.g., "a water bottle"' required/>
+        <button type="submit" className='w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105 text-xs sm:text-sm lg:text-base'>Identify</button>
       </form>
     </div>
   );
