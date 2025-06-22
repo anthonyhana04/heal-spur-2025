@@ -1,23 +1,19 @@
 import React from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth } from "./auth";
 
 const Login = () => {
-  const { loginWithRedirect, isAuthenticated, isLoading, error } = useAuth0();
+  const { login, isAuthenticated, isLoading } = useAuth();
 
   const handleLogin = async () => {
     try {
-      await loginWithRedirect();
+      await login();
     } catch (err) {
-      alert('Login failed. Please check your Auth0 configuration.');
+      alert('Login failed.');
     }
   };
 
   if (isLoading) {
     return <div>Loading...</div>;
-  }
-
-  if (error) {
-    return <div>Error: {error.message}</div>;
   }
 
   if (isAuthenticated) {
@@ -32,7 +28,7 @@ const Login = () => {
           onClick={handleLogin}
           className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition transform hover:scale-105"
         >
-          Log In with Auth0
+          Log In
         </button>
       </div>
     </div>

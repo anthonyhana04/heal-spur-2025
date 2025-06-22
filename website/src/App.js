@@ -10,11 +10,11 @@ import { useRef } from 'react'
 import { useNavigate} from 'react-router-dom';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Parallax, ParallaxLayer } from '@react-spring/parallax'
-import { useAuth0 } from '@auth0/auth0-react';
+import { useAuth } from './auth';
 
 const AppContainer = () => {
   const navigate = useNavigate();
-  const { loginWithRedirect, logout, isAuthenticated, isLoading } = useAuth0();
+  const { login, logout, isAuthenticated, isLoading } = useAuth();
   
   function handleClick(){
     ref.current.scrollTo(0);
@@ -22,16 +22,15 @@ const AppContainer = () => {
 
   const handleLogin = async () => {
     try {
-      console.log('Attempting to login with Auth0...');
-      await loginWithRedirect();
+      await login();
     } catch (err) {
       console.error('Login error:', err);
-      alert('Login failed. Please check your Auth0 configuration.');
+      alert('Login failed.');
     }
   };
 
   const handleLogout = () => {
-    logout({ logoutParams: { returnTo: window.location.origin } });
+    logout();
   };
 
   const ref = useRef();
