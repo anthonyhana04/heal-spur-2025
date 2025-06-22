@@ -165,6 +165,11 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const response = await genAI.models.generateContent({
 			model: "gemini-2.5-flash",
 			contents: contents,
+			config: {
+				maxOutputTokens: 1024,
+				temperature: 0.2,
+				topP: 0.95,
+			},
 		});
 
 		const contentOut = response.text ?? "";
