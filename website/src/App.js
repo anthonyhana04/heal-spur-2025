@@ -78,13 +78,13 @@ const AppContainer = () => {
             </div>
 
             {/* Right-side Lottie Animation */}
-            <div className='w-full sm:w-2/3 lg:w-1/3 max-w-md lg:max-w-none'>
+            <div className='w-full sm:w-2/3 lg:w-1/3 max-w-md lg:max-w-none flex justify-center'>
               <Lottie animationData={Camera} loop={true} />
             </div>
           </div>
-          <div 
-            className='absolute bottom-4 left-1/2 -translate-x-1/2 w-8 h-16 sm:w-12 sm:h-24'
-          >
+          
+          {/* Scroll Down Animation */}
+          <div className='absolute bottom-4 left-1/2 -translate-x-1/2 w-8 h-16 sm:w-12 sm:h-24'>
             <Lottie animationData={ScrollDown} loop={true} />
           </div>
         </ParallaxLayer>
