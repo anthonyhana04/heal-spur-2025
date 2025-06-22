@@ -21,6 +21,7 @@ export interface ChatMessage {
 	id: string;          // uuid – makes it easy to sort chronologically
 	role: Role;
 	content: string;
+	imageKey?: string;
 	imageUrl?: string;
 	mimeType?: string;
 	timestamp: number;   // Date.now()
@@ -84,15 +85,15 @@ export async function getRooms(env: Env, userId: string): Promise<RoomMeta[]> {
 /**
  * Saves a single message in a room and updates the room's `updatedAt` timestamp.
  */
-export async function saveMessage(env: Env, userId: string, roomId: string, role: Role, content: string, mimeType?: string, imageUrl?: string): Promise<ChatMessage> {
+export async function saveMessage(env: Env, userId: string, roomId: string, role: Role, content: string, imageKey?: string, mimeType?: string, imageUrl?: string): Promise<ChatMessage> {
 	const id = uuidv7();
 	const msg: ChatMessage = {
 		id,
 		role,
 		content,
-		mimeType,
-		...(imageUrl ? { imageUrl: imageUrl } : {}),
 		...(mimeType ? { mimeType: mimeType } : {}),
+		...(imageKey ? { imageKey: imageKey } : {}),
+		...(imageUrl ? { imageUrl: imageUrl } : {}),
 		timestamp: Date.now(),
 	};
 	// Store message

@@ -5,6 +5,7 @@
  *	├─ POST /generate	 – proxy a Gemini text/vision request (same shape as Gemini API).
  *	├─ POST /upload		 – accept a base64-encoded file, persist it to Cloudflare R2 and forward it to
  *	│										 Gemini Files API. Returns the File object { name, uri, mimeType, … }.
+ *	├─ POST /image-upload – accept and store base64-encoded images in R2.
  *	└─ /r2/*					 – Direct R2 bucket operations (GET/PUT/DELETE)
  *
  *	The /upload route expects JSON of the form:
@@ -29,7 +30,8 @@ router
 	.post('/messages', listMessages)
 	.post('/register', registerUser)
 	.post('/login', loginUser)
-	.post('/logout', logoutUser);
+	.post('/logout', logoutUser)
+	.post('/image-upload', handleImageUpload);
 
 declare global {
 	interface ImportMeta {
@@ -118,23 +120,56 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 		}
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		const { roomId, content, imageUrl, mimeType } = (await request.json() as any);
-		await saveMessage(env, userId, roomId, "user", content, mimeType, imageUrl);
+		const { roomId, content, imageKey } = (await request.json() as any);
+
+		// If imageKey is provided, fetch the image data from R2
+		let mimeType: string | undefined = undefined;
+		if (imageKey) {
+			const obj = await env.MY_BUCKET.get(imageKey);
+			if (!obj) {
+				return new Response(
+					JSON.stringify({ error: "Image not found in R2" }),
+					{ status: 404, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+				);
+			}
+			mimeType = obj.httpMetadata?.contentType || 'image/jpeg';
+		}
+
+		// Save the user's message
+		await saveMessage(env, userId, roomId, "user", content, mimeType, imageKey);
+
+		// Get conversation history
 		const { messages } = await getMessages(env, userId, roomId);
-		const contents = messages.map((item: ChatMessage) => {
+
+		// Convert messages to Gemini format
+		const contents = await Promise.all(messages.map(async (item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
 			if (item.imageUrl && item.mimeType) {
-				parts.push(createPartFromUri(item.imageUrl, item.mimeType));
+				// item.imageUrl contains the R2 key
+				const obj = await env.MY_BUCKET.get(item.imageUrl);
+				if (obj) {
+					// Get the base64 data directly from R2
+					const base64Data = await obj.text();
+					parts.push({
+						inlineData: {
+							data: base64Data,
+							mimeType: item.mimeType
+						}
+					});
+				}
 			}
 			return {
 				parts,
 				role: item.role,
 			};
-		});
+		}));
+
+		// Generate response from Gemini
 		const response = await genAI.models.generateContent({
 			model: "gemini-2.5-flash",
 			contents: contents,
 		});
+
 		const contentOut = response.text ?? "";
 		let msg;
 		if (response.data) {
@@ -239,6 +274,82 @@ async function listMessages(request: Request, env: Env): Promise<Response> {
 		);
 	}
 	catch (error) {
+		return new Response(
+			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		);
+	}
+}
+
+/**
+ * /image-upload – store base64-encoded images in R2.
+ * Expects JSON body: {
+ *   fileName: string,
+ *   data: string (base64 encoded image)
+ * }
+ */
+async function handleImageUpload(request: Request, env: Env): Promise<Response> {
+	try {
+		const body = await request.json<{
+			fileName: string;
+			data: string; // base64
+		}>();
+
+		const { fileName, data } = body;
+		if (!fileName || !data) {
+			return new Response(
+				JSON.stringify({ error: "fileName and data fields are required" }),
+				{ status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+			);
+		}
+
+		// Validate file extension is an image
+		const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+		const fileExt = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+		if (!validExtensions.includes(fileExt)) {
+			return new Response(
+				JSON.stringify({ error: "Only image files are allowed" }),
+				{ status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+			);
+		}
+
+		// Decode base64 → ArrayBuffer
+		const binaryString = atob(data);
+		const binary = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+			binary[i] = binaryString.charCodeAt(i);
+		}
+
+		// Determine MIME type based on file extension
+		const mimeTypes: { [key: string]: string } = {
+			'.jpg': 'image/jpeg',
+			'.jpeg': 'image/jpeg',
+			'.png': 'image/png',
+			'.gif': 'image/gif',
+			'.webp': 'image/webp'
+		};
+		const mimeType = mimeTypes[fileExt];
+
+		// Generate a unique key for R2 storage
+		const r2Key = `${uuidv7()}-${fileName}`;
+		await env.MY_BUCKET.put(r2Key, binary, {
+			httpMetadata: { contentType: mimeType }
+		});
+
+		return new Response(
+			JSON.stringify({
+				success: true,
+				fileName: fileName,
+				mimeType: mimeType,
+				key: r2Key,
+				url: `${env.BUCKET_URL}/${r2Key}`
+			}),
+			{
+				status: 200,
+				headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+			}
+		);
+	} catch (error) {
 		return new Response(
 			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
 			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
