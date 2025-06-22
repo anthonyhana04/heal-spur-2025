@@ -43,6 +43,7 @@ export interface Env {
 	GOOGLE_API_KEY: string;
 	MY_BUCKET: R2Bucket; // R2 bucket binding defined in wrangler.toml / wrangler.json
 	CHAT_LOGS: KVNamespace; // Optional KV namespace for chat logs
+	BUCKET_URL: string; // URL of the R2 bucket, used for file access
 }
 
 // Helpful CORS headers
@@ -106,15 +107,15 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 		}
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		const { roomId, content, url, mimeType } = (await request.json() as any);
-		await saveMessage(env, userId, roomId, "user", content, mimeType, url);
+		const { roomId, content, key, mimeType } = (await request.json() as any);
+		await saveMessage(env, userId, roomId, "user", content, mimeType, key);
 		const { messages } = (await getMessages(env, userId, roomId));
 		const contents = messages.map((item: any) => {
 			const parts: any = [{ text: item.content }];
 			if (item.key && item.mimeType) {
 				const fileData = {
 					mimeType: item.mimeType,
-					key: `${item.key}`,
+					url: `${env.BUCKET_URL}${item.key}`,
 				};
 				parts.push(fileData);
 			}
