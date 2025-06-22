@@ -88,7 +88,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 		JSON.stringify({
 			name: fileName,
 			mimeType,
-			r2Key, // Include R2 key for reference
+			imageUrl: `${env.BUCKET_URL}/${r2Key}`, // URL to access the file
 		}),
 		{
 			status: 200,
