@@ -28,7 +28,8 @@ router
 	.get('/rooms', listRooms)
 	.post('/messages', listMessages)
 	.post('/register', registerUser)
-	.post('/login', loginUser);
+	.post('/login', loginUser)
+	.post('/logout', logoutUser);
 
 declare global {
 	interface ImportMeta {
@@ -127,17 +128,17 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			contents: contents,
 		});
 		const { readable, writable } = new TransformStream();
+		const writer = writable.getWriter();
 		for await (const chunk of response) {
 			if (chunk.text !== undefined) {
 				const text = chunk.text;
 				const responseChunk = { text };
-				writable.getWriter().write(JSON.stringify(responseChunk) + "\n");
-			}
-			else {
-				// Handle unexpected chunk format
+				await writer.write(JSON.stringify(responseChunk) + "\n");
+			} else {
 				console.warn("Unexpected chunk format:", chunk);
 			}
 		}
+		await writer.close();
 		return new Response(readable, {
 			status: 200,
 			headers: {
@@ -238,7 +239,7 @@ const SESSION_PREFIX = 'sessions/';
 const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
 
 function userKey(username: string) {
-	return `${USER_PREFIX}${username.toLowerCase()}`;
+	return `${USER_PREFIX}${username}`;
 }
 function sessionKey(sessionId: string) {
 	return `${SESSION_PREFIX}${sessionId}`;
@@ -283,9 +284,8 @@ async function registerUser(request: Request, env: Env): Promise<Response> {
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
 		});
 	}
-	const usernameKey = userKey(creds.username);
 	// Check if user already exists
-	const existing = await env.CHAT_LOGS.get(usernameKey);
+	const existing = await env.CHAT_LOGS.get(userKey(creds.username));
 	if (existing) {
 		return new Response(JSON.stringify({ error: 'Username already exists' }), {
 			status: 409,
@@ -298,7 +298,7 @@ async function registerUser(request: Request, env: Env): Promise<Response> {
 		passwordHash,
 		createdAt: Date.now(),
 	};
-	await env.CHAT_LOGS.put(usernameKey, JSON.stringify(userObj));
+	await env.CHAT_LOGS.put(userKey(creds.username), JSON.stringify(userObj));
 	return new Response(JSON.stringify({ message: 'User registered successfully' }), {
 		status: 201,
 		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -331,6 +331,21 @@ async function loginUser(request: Request, env: Env): Promise<Response> {
 	const sessionId = uuidv7();
 	await env.CHAT_LOGS.put(sessionKey(sessionId), creds.username, { expirationTtl: SESSION_TTL });
 	return new Response(JSON.stringify({ sessionId }), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+	});
+}
+
+async function logoutUser(request: Request, env: Env): Promise<Response> {
+	const sessionId = await getSessionId(request);
+	if (!sessionId) {
+		return new Response(JSON.stringify({ error: 'Session ID is required' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+		});
+	}
+	await env.CHAT_LOGS.delete(sessionKey(sessionId));
+	return new Response(JSON.stringify({ message: 'Logged out successfully' }), {
 		status: 200,
 		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
 	});
