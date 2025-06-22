@@ -145,6 +145,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 				"Content-Type": "application/json",
 				...CORS_HEADERS,
 				"Cache-Control": "no-cache",
+				"Transfer-Encoding": "chunked",
 			},
 		});
 	} catch (error) {
