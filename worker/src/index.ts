@@ -140,9 +140,9 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		// Convert messages to Gemini format
 		const contents = await Promise.all(messages.map(async (item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
-			if (item.imageUrl && item.mimeType) {
+			if (item.imageKey && item.mimeType) {
 				// item.imageUrl contains the R2 key
-				const obj = await env.MY_BUCKET.get(item.imageUrl);
+				const obj = await env.MY_BUCKET.get(item.imageKey);
 				console.log("obj", obj);
 				if (obj) {
 					// Get the base64 data directly from R2
