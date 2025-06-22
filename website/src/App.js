@@ -3,7 +3,9 @@ import Lottie from 'lottie-react'
 import Camera from './camera.json'
 import Start from './start.js'
 import Login from './login.js'
+import Email from './email.js'
 import Logo from './logo.png'
+import ScrollDown from './scrollDown.json'
 import { useRef } from 'react'
 import { useNavigate} from 'react-router-dom';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -80,6 +82,11 @@ const AppContainer = () => {
               <Lottie animationData={Camera} loop={true} />
             </div>
           </div>
+          <div 
+            className='absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-24'
+          >
+            <Lottie animationData={ScrollDown} loop={true} />
+          </div>
         </ParallaxLayer>
 
         {/* Page 2: About Me */}
@@ -88,31 +95,43 @@ const AppContainer = () => {
           speed={0.8}
           className="flex flex-col items-center justify-center text-white"
         >
-          <h2 className="text-5xl font-bold">About HEALense</h2>
+          <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-24 mb-8' />
+          <h2 className="text-5xl font-bold">About <span style={{color: 'dodgerblue'}}>HEALense</span></h2>
           <p className="mt-4 text-xl max-w-2xl text-center">
             HEALense is a revolutionary tool designed to give you information about the world around you, instantly. 
             Just point your camera, and let our intelligent lens do the rest.
           </p>
+          <button className='mt-8 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={()=>navigate('/email')}>
+            Send us an email
+          </button>
         </ParallaxLayer>
       </Parallax> 
-      <div className='absolute top-4 left-4 transition transform hover:scale-125' onClick={handleClick}>
-            <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-12' />
-      </div>  
+      <div className='absolute top-4 left-4 flex items-center gap-6'>
+        <div className='transition transform hover:scale-125 cursor-pointer' onClick={handleClick}>
+          <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-12' />
+        </div>
+        <button 
+          className='text-white text-lg hover:text-blue-300 transition-colors' 
+          onClick={() => ref.current.scrollTo(1)}
+        >
+          About Us
+        </button>
+      </div>
       <div className='absolute top-4 right-4 flex items-center gap-4'>
-            {!isLoading && (
-              <>
-                {!isAuthenticated ? (
-                  <button className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={handleLogin}>
-                    Login
-                  </button>
-                ) : (
-                  <button className='bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition transform hover:scale-105' onClick={handleLogout}>
-                    Logout
-                  </button>
-                )}
-              </>
+        {!isLoading && (
+          <>
+            {!isAuthenticated ? (
+              <button className='bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105' onClick={handleLogin}>
+                Login
+              </button>
+            ) : (
+              <button className='bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition transform hover:scale-105' onClick={handleLogout}>
+                Logout
+              </button>
             )}
-          </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -124,6 +143,7 @@ const App = () => {
         <Route path='/' element={<AppContainer />} />
         <Route path='/start' element={<Start />} />
         <Route path='/login' element={<Login/>}/>
+        <Route path='/email' element={<Email/>}/>
       </Routes>
     </BrowserRouter>
   )
