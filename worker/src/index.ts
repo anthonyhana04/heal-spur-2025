@@ -18,6 +18,7 @@
 import { AutoRouter } from 'itty-router'
 import { GoogleGenAI } from '@google/genai';
 import { saveMessage, getMessages, saveRoom, getRooms } from './storage';
+import { uuidv7 } from 'uuidv7';
 
 const router = AutoRouter()
 router
@@ -25,7 +26,9 @@ router
 	.post('/generate', handleGenerate)
 	.post('/room', createRoom)
 	.get('/rooms', listRooms)
-	.post('/messages', listMessages);
+	.post('/messages', listMessages)
+	.post('/register', registerUser)
+	.post('/login', loginUser);
 
 declare global {
 	interface ImportMeta {
@@ -224,4 +227,111 @@ async function listMessages(request: Request, env: Env): Promise<Response> {
 			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
 		);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Auth helpers & handlers
+// ---------------------------------------------------------------------------
+
+const USER_PREFIX = 'users/';
+const SESSION_PREFIX = 'sessions/';
+const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
+
+function userKey(username: string) {
+	return `${USER_PREFIX}${username.toLowerCase()}`;
+}
+function sessionKey(sessionId: string) {
+	return `${SESSION_PREFIX}${sessionId}`;
+}
+
+function parseBasicAuth(request: Request): { username: string; password: string } | null {
+	const auth = request.headers.get('Authorization');
+	if (!auth || !auth.startsWith('Basic ')) return null;
+	try {
+		const decoded = atob(auth.slice('Basic '.length));
+		const [username, ...rest] = decoded.split(':');
+		const password = rest.join(':'); // in case password contains ':'
+		if (!username || !password) return null;
+		return { username, password };
+	} catch {
+		return null;
+	}
+}
+
+async function sha256(message: string): Promise<string> {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(message);
+	const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+	const bytes = Array.from(new Uint8Array(hashBuffer));
+	return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function registerUser(request: Request, env: Env): Promise<Response> {
+	// Try to extract credentials from Basic Auth header; fallback to JSON body
+	let creds = parseBasicAuth(request);
+	if (!creds) {
+		try {
+			const body = await request.json<{ username: string; password: string }>();
+			creds = { username: body.username, password: body.password };
+		} catch {
+			creds = null;
+		}
+	}
+	if (!creds || !creds.username || !creds.password) {
+		return new Response(JSON.stringify({ error: 'Username and password are required' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+		});
+	}
+	const usernameKey = userKey(creds.username);
+	// Check if user already exists
+	const existing = await env.CHAT_LOGS.get(usernameKey);
+	if (existing) {
+		return new Response(JSON.stringify({ error: 'Username already exists' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+		});
+	}
+	const passwordHash = await sha256(creds.password);
+	const userObj = {
+		username: creds.username,
+		passwordHash,
+		createdAt: Date.now(),
+	};
+	await env.CHAT_LOGS.put(usernameKey, JSON.stringify(userObj));
+	return new Response(JSON.stringify({ message: 'User registered successfully' }), {
+		status: 201,
+		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+	});
+}
+
+async function loginUser(request: Request, env: Env): Promise<Response> {
+	const creds = parseBasicAuth(request);
+	if (!creds) {
+		return new Response(JSON.stringify({ error: 'Basic Authorization header is required' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Basic realm="User Visible Realm"', ...CORS_HEADERS },
+		});
+	}
+	const userRaw = await env.CHAT_LOGS.get(userKey(creds.username));
+	if (!userRaw) {
+		return new Response(JSON.stringify({ error: 'Invalid credentials' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+		});
+	}
+	const user = JSON.parse(userRaw) as { passwordHash: string };
+	const incomingHash = await sha256(creds.password);
+	if (incomingHash !== user.passwordHash) {
+		return new Response(JSON.stringify({ error: 'Invalid credentials' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+		});
+	}
+	const sessionId = uuidv7();
+	await env.CHAT_LOGS.put(sessionKey(sessionId), creds.username, { expirationTtl: SESSION_TTL });
+	return new Response(JSON.stringify({ sessionId }), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+	});
 }
