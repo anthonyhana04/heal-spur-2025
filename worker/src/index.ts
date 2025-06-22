@@ -17,7 +17,7 @@
  *	}
  */
 import { AutoRouter } from 'itty-router'
-import { createPartFromUri, GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { saveMessage, getMessages, saveRoom, getRooms, ChatMessage } from './storage';
 import { uuidv7 } from 'uuidv7';
 
@@ -74,28 +74,46 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
 			{ status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
 		);
 	}
+	const contents = [{
+		parts: [{ text: "describe this" }, {
+			inlineData: {
+				data: data,
+				mimeType: mimeType,
+			},
+		}],
+		role: "user",
+	}]
+	const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
+	// Generate response from Gemini
+	const response = await genAI.models.generateContent({
+		model: "gemini-2.5-flash",
+		contents: contents,
+		config: {
+			maxOutputTokens: 1024,
+			temperature: 0.2,
+			topP: 0.95,
+		},
+	});
 
+	const contentOut = response.text ?? "";
+	return new Response(
+		contentOut,
+		{
+			status: 200,
+			headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+		}
+	);
 	// Persist in R2 (the key will be the original filename with uuid prefix)
 	const r2Key = `${crypto.randomUUID()}-${fileName}`;
 	await env.MY_BUCKET.put(r2Key, data, {
 		httpMetadata: { contentType: mimeType },
 	});
-	const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-	// Forward to Gemini Files API
-	// Note: Gemini Files API expects a file object with a specific structure
-	// Create the file in Gemini
-	const response = await genAI.files.upload({
-		file: `${env.BUCKET_URL}/${r2Key}`,
-		config: {
-			name: fileName,
-			mimeType,
-		},
-	});
 	return new Response(
 		JSON.stringify({
 			name: fileName,
 			mimeType,
-			imageUrl: response.uri, // URL to access the file
+			imageKey: r2Key,
+			imageUrl: `${env.BUCKET_URL}/${r2Key}`,
 		}),
 		{
 			status: 200,
@@ -114,7 +132,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
 		}
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		const { roomId, content, imageKey } = (await request.json() as any);
+		const { roomId, content, imageKey, image } = (await request.json() as any);
 
 		// If imageKey is provided, fetch the image data from R2
 		let mimeType: string | undefined = undefined;
@@ -143,14 +161,14 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			if (item.imageKey && item.mimeType) {
 				// item.imageUrl contains the R2 key
 				const obj = await env.MY_BUCKET.get(item.imageKey);
-				console.log("obj", obj);
+				console.log(item.mimeType);
 				if (obj) {
 					// Get the base64 data directly from R2
 					const base64Data = await obj.text();
 					parts.push({
 						inlineData: {
-							data: base64Data,
-							mimeType: item.mimeType
+							data: image,
+							mimeType: "image/jpeg", // Default to JPEG, can be adjusted based on item.mimeType
 						}
 					});
 				}
@@ -173,9 +191,9 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		});
 
 		const contentOut = response.text ?? "";
-		const msg = await saveMessage(env, userId, roomId, "assistant", contentOut);
+		await saveMessage(env, userId, roomId, "assistant", contentOut);
 		return new Response(
-			JSON.stringify(msg),
+			contentOut,
 			{
 				status: 200,
 				headers: { "Content-Type": "application/json", ...CORS_HEADERS },
