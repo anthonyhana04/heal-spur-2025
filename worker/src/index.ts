@@ -17,11 +17,15 @@
  */
 import { AutoRouter } from 'itty-router'
 import { GoogleGenAI } from '@google/genai';
+import { saveMessage, getMessages, saveRoom, getRooms } from './storage';
 
 const router = AutoRouter()
 router
 	.post('/upload', handleUpload)
 	.post('/generate', handleGenerate)
+	.post('/room', createRoom)
+	.get('/rooms', listRooms)
+	.post('/messages', listMessages);
 
 declare global {
 	interface ImportMeta {
@@ -93,10 +97,15 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
  */
 async function handleGenerate(request: Request, env: Env): Promise<Response> {
 	try {
+		const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+		if (!userId) {
+			return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
+		}
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
-		const { roomId, prompt, url, mimeType } = (await request.json() as any);
-		await saveMessages(env, userId, roomId, role, content, mimeType, url);
-		const contents = (await getMessages(env, roomId)).map((item: any) => {
+		const { roomId, content, url, mimeType } = (await request.json() as any);
+		await saveMessage(env, userId, roomId, "user", content, mimeType, url);
+		const { messages } = (await getMessages(env, userId, roomId));
+		const contents = messages.map((item: any) => {
 			const parts: any = [{ text: item.content }];
 			if (item.url && item.mimeType) {
 				const fileData = {
@@ -135,6 +144,81 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			},
 		});
 	} catch (error) {
+		return new Response(
+			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		);
+	}
+}
+
+/**
+ *rooms – create a new room.
+ */
+
+async function createRoom(request: Request, env: Env): Promise<Response> {
+	const body = await request.json<{ initialTitle: string | null }>();
+	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	if (!userId) {
+		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
+	}
+	try {
+		const meta = await saveRoom(env, userId, body.initialTitle);
+		return new Response(JSON.stringify(meta), {
+			status: 201,
+			headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+		});
+	} catch (error) {
+		return new Response(
+			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		);
+	}
+}
+
+/**
+ * /rooms – get all rooms for a user.
+ */
+async function listRooms(request: Request, env: Env): Promise<Response> {
+	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	if (!userId) {
+		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
+	}
+	try {
+		const rooms = await getRooms(env, userId);
+		return new Response(JSON.stringify(rooms), {
+			status: 200,
+			headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+		});
+	} catch (error) {
+		return new Response(
+			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+		);
+	}
+}
+
+/**
+ * listMessages – get all messages in a room with pagination.
+ */
+async function listMessages(request: Request, env: Env): Promise<Response> {
+	const userId = request.headers.get("X-User-Id"); // Replace with actual user ID logic
+	if (!userId) {
+		return new Response(JSON.stringify({ error: "User ID is required" }), { status: 400 });
+	}
+	try {
+		const { roomId, cursor } = await request.json<{ roomId: string; cursor?: string }>();
+		if (!roomId) {
+			return new Response(JSON.stringify({ error: "Room ID is required" }), { status: 400 });
+		}
+		return new Response(
+			JSON.stringify(await getMessages(env, userId, roomId, cursor)),
+			{
+				status: 200,
+				headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+			}
+		);
+	}
+	catch (error) {
 		return new Response(
 			JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
 			{ status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
