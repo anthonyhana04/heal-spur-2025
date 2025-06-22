@@ -133,10 +133,12 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 				);
 			}
 			mimeType = obj.httpMetadata?.contentType || 'image/jpeg';
+			// Save the user's message
+			await saveMessage(env, userId, roomId, "user", content, imageKey, mimeType, `${env.BUCKET_URL}/${imageKey}`);
 		}
-
-		// Save the user's message
-		await saveMessage(env, userId, roomId, "user", content, mimeType, imageKey);
+		else {
+			await saveMessage(env, userId, roomId, "user", content);
+		}
 
 		// Get conversation history
 		const { messages } = await getMessages(env, userId, roomId);
