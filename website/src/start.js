@@ -6,6 +6,60 @@ import Logo from './logo.png';
 const ObjectInput = ({ onIdentify, hasImage }) => {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn('Speech recognition not supported by this browser.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError('');
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      setError(`Speech error: ${event.error}`);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setText(transcript);
+      if (hasImage) {
+        onIdentify(transcript);
+      } else {
+        setError('Please select an image before using voice input.');
+      }
+    };
+
+    recognitionRef.current = recognition;
+  }, [hasImage, onIdentify]);
+
+  const handleMicClick = () => {
+    if (!recognitionRef.current) {
+      setError('Speech recognition is not supported.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+    }
+  };
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -40,13 +94,13 @@ const ObjectInput = ({ onIdentify, hasImage }) => {
   };
 
   return (
-    <form onSubmit={onSubmit} className="w-full max-w-sm sm:max-w-md lg:max-w-2xl bg-gray-900/50 p-3 sm:p-4 rounded-lg shadow-lg text-white flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-      <label htmlFor="object-input" className='font-bold flex-shrink-0 text-sm sm:text-base'>Enter desired object:</label>
+    <form onSubmit={onSubmit} className="w-full max-w-sm sm:max-w-md lg:max-w-4xl xl:max-w-5xl bg-gray-900/50 p-2 sm:p-3 lg:p-4 rounded-lg shadow-lg text-white flex flex-col sm:flex-row items-center gap-2 sm:gap-3 lg:gap-4">
+      <label htmlFor="object-input" className='font-bold flex-shrink-0 text-xs sm:text-sm lg:text-base'>Enter desired object/action:</label>
       <textarea 
         id="object-input" 
         name='object' 
-        className='w-full p-2 sm:p-3 rounded bg-gray-800 border border-gray-700 text-white resize-none text-sm sm:text-base' 
-        placeholder='e.g., "a water bottle"' 
+        className='w-full p-1.5 sm:p-2 lg:p-3 rounded bg-gray-800 border border-gray-700 text-white resize-none text-xs sm:text-sm lg:text-base' 
+        placeholder='e.g., "a water bottle" or "find my keys"' 
         rows={1}
         value={text}
         onChange={(e) => {
@@ -69,19 +123,34 @@ const ObjectInput = ({ onIdentify, hasImage }) => {
         maxLength={100}
         required
       />
+      <button
+        type="button"
+        onClick={handleMicClick}
+        className={`p-2 rounded-full transition-colors focus:outline-none ${
+          isListening
+            ? 'bg-red-600 text-white animate-pulse'
+            : 'bg-gray-600 text-gray-300 hover:bg-gray-700'
+        }`}
+        title="Identify object with voice"
+        disabled={!hasImage}
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-14 0m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        </svg>
+      </button>
       <button 
         type="submit" 
-        className={`px-4 sm:px-6 py-2 rounded-md transition transform hover:scale-105 text-sm sm:text-base whitespace-nowrap ${
+        className={`px-2 sm:px-4 lg:px-6 py-1.5 sm:py-2 rounded-md transition transform hover:scale-105 text-xs sm:text-sm lg:text-base whitespace-nowrap ${
           hasImage 
             ? 'bg-blue-600 text-white hover:bg-blue-700' 
             : 'bg-gray-600 text-gray-300 cursor-not-allowed'
         }`}
         disabled={!hasImage || !text.trim()}
       >
-        Identify
+        Send
       </button>
       {error && (
-        <div className="w-full text-red-400 text-sm mt-2 text-center">
+        <div className="w-full text-red-400 text-xs sm:text-sm mt-1 sm:mt-2 text-center">
           {error}
         </div>
       )}
@@ -184,12 +253,221 @@ const ObjectHistory = ({ onHistoryClick, objectHistory, onClearAll }) => {
   );
 };
 
+const ChatBox = ({ objectHistory, onNewMessage }) => {
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Handle external messages (from object identification)
+  useEffect(() => {
+    const handleExternalMessage = (message) => {
+      const userMessage = {
+        id: Date.now(),
+        text: message,
+        sender: 'user',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setMessages(prev => [...prev, userMessage]);
+      setIsLoading(true);
+
+      // Generate AI response
+      setTimeout(() => {
+        const aiResponse = generateAIResponse(message, objectHistory);
+        const aiMessage = {
+          id: Date.now() + 1,
+          text: aiResponse,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
+        setIsLoading(false);
+      }, 1000);
+    };
+
+    // Listen for external messages
+    const handleMessage = (event) => {
+      if (event.detail && event.detail.type === 'object-identified') {
+        handleExternalMessage(event.detail.message);
+      }
+    };
+
+    window.addEventListener('object-identified', handleMessage);
+    return () => window.removeEventListener('object-identified', handleMessage);
+  }, [objectHistory]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    
+    if (!inputText.trim()) return;
+
+    const userMessage = {
+      id: Date.now(),
+      text: inputText,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
+    setIsLoading(true);
+
+    // Simulate AI response based on object history
+    setTimeout(() => {
+      const aiResponse = generateAIResponse(inputText, objectHistory);
+      const aiMessage = {
+        id: Date.now() + 1,
+        text: aiResponse,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      setIsLoading(false);
+    }, 1000);
+  };
+
+  const generateAIResponse = (question, history) => {
+    const lowerQuestion = question.toLowerCase();
+    
+    // Handle object identification queries (only when they start with "identify")
+    if (lowerQuestion.startsWith('identify ')) {
+      const objectName = question.replace(/^identify\s+/i, '').trim();
+      if (objectName) {
+        return `I'm searching for "${objectName}" in your image. This will help you locate where this object appears in the captured screenshot or uploaded image. The bounding boxes will show you the exact location once the identification is complete.`;
+      }
+    }
+    
+    // Handle general greetings
+    if (lowerQuestion.includes('hello') || lowerQuestion.includes('hi') || lowerQuestion.includes('hey')) {
+      return "Hello! I'm your AI assistant. I can help you with object identification, answer questions about the app, and provide guidance on how to use the features. What would you like to know?";
+    }
+    
+    // Handle questions about identified objects
+    if (lowerQuestion.includes('what') && lowerQuestion.includes('identified')) {
+      if (history.length === 0) {
+        return "No objects have been identified yet. Take a screenshot or upload an image first, then identify objects to see them here.";
+      }
+      const recentItems = history.slice(0, 3);
+      const itemList = recentItems.map(item => `"${item.object}" (${item.status})`).join(', ');
+      return `Recently identified objects: ${itemList}. You can click on any item in the history to view it on the camera.`;
+    }
+    
+    // Handle how-to questions
+    if (lowerQuestion.includes('how') && lowerQuestion.includes('work')) {
+      return "To use this app: 1) Take a screenshot with your camera or upload an image, 2) Enter the name of an object you want to identify, 3) Click 'Send' to search for it. The app will show you where the object is located in the image.";
+    }
+    
+    // Handle camera questions
+    if (lowerQuestion.includes('camera') || lowerQuestion.includes('webcam')) {
+      return "You can switch between camera mode and file upload mode using the buttons above the image area. In camera mode, you can take screenshots. In dropzone mode, you can drag and drop or click to upload images.";
+    }
+    
+    // Handle history questions
+    if (lowerQuestion.includes('history') || lowerQuestion.includes('previous')) {
+      if (history.length === 0) {
+        return "Your object history is empty. Start identifying objects to build up your search history.";
+      }
+      return `You have ${history.length} items in your history. Click on any item to view it on the camera. You can also clear all history using the 'Clear All' button.`;
+    }
+    
+    // Handle help requests
+    if (lowerQuestion.includes('help') || lowerQuestion.includes('support')) {
+      return "I'm here to help! You can ask me about: how the app works, what objects have been identified, how to use the camera, managing your history, or any other questions about the object identification feature.";
+    }
+    
+    // Handle general questions about the app
+    if (lowerQuestion.includes('app') || lowerQuestion.includes('this') || lowerQuestion.includes('feature')) {
+      return "This is an object identification app that helps you find objects in images. You can use your camera to take screenshots or upload images, then identify specific objects within them. The app will show you exactly where those objects are located.";
+    }
+    
+    // Default response for unrecognized messages
+    return "I'm not sure I understand. You can ask me about how the app works, what objects have been identified, how to use the camera, or request help with any features. What would you like to know?";
+  };
+
+  return (
+    <div className="w-full h-full bg-gray-900/80 rounded-lg p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-white text-lg font-bold">AI Assistant</h3>
+        <div className="text-gray-400 text-xs">Ask me anything!</div>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+        {messages.length === 0 ? (
+          <div className="text-center text-gray-400 text-sm py-8">
+            <div className="mb-2">🤖</div>
+            <p>Hello! I'm here to help with your object identification questions.</p>
+            <p className="text-xs mt-2">Try asking: "How does this work?" or "What objects have been identified?"</p>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div 
+              key={message.id} 
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`max-w-[80%] rounded-lg p-3 ${
+                message.sender === 'user' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-800 text-white'
+              }`}>
+                <p className="text-sm">{message.text}</p>
+                <p className="text-xs opacity-70 mt-1">{message.timestamp}</p>
+              </div>
+            </div>
+          ))
+        )}
+        
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-gray-800 text-white rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span className="text-sm">Thinking...</span>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
+      
+      <form onSubmit={handleSendMessage} className="flex gap-2">
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Ask a question..."
+          className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none"
+          disabled={isLoading}
+        />
+        <button
+          type="submit"
+          disabled={!inputText.trim() || isLoading}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm transition-colors"
+        >
+          Send
+        </button>
+      </form>
+    </div>
+  );
+};
+
 const Start = () => {
   const navigate = useNavigate();
   const [uploadedImage, setUploadedImage] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [turnOnCam, setTurnOnCam] = useState(false);
-  const [boundingBoxes, setBoundingBoxes] = useState([
+  const [boundingBoxes] = useState([
     { x: 150, y: 100, width: 300, height: 250, label: 'Object 1', color: 'lime' },
     { x: 400, y: 200, width: 150, height: 150, label: 'Object 2', color: 'red' }
   ]);
@@ -430,6 +708,15 @@ const Start = () => {
         return;
       }
 
+      // Dispatch event to trigger chatbox response
+      const event = new CustomEvent('object-identified', {
+        detail: {
+          type: 'object-identified',
+          message: `${trimmedName}`
+        }
+      });
+      window.dispatchEvent(event);
+
       // Determine the source area
       const sourceArea = screenshotImage ? 'webcam' : 'dropzone';
 
@@ -552,7 +839,7 @@ const Start = () => {
   }, [uploadedImage]);
 
   return (
-    <div className='min-h-screen animated-gradient relative flex'>
+    <div className='min-h-screen animated-gradient relative flex flex-col lg:flex-row'>
       {/* Logo */}
       <div 
         className='absolute top-4 left-4 cursor-pointer transition transform hover:scale-125 z-10'
@@ -561,11 +848,11 @@ const Start = () => {
         <img src={process.env.PUBLIC_URL + Logo} alt='Logo' className='h-8 sm:h-10 lg:h-12' />
       </div>
 
-      {/* Left Side - Main Content */}
-      <div className='flex-1 flex flex-col items-center justify-center p-4 lg:p-6'>
-        <div className='flex flex-col items-center justify-center w-full gap-4 lg:gap-6 mb-4 lg:mb-6'>
+      {/* Main Content Area */}
+      <div className='flex-1 flex flex-col items-center justify-center p-4 lg:p-6 w-full'>
+        <div className='w-full max-w-4xl flex flex-col items-center gap-6'>
           {/* Unified Image Area */}
-          <div className={`w-full sm:w-[500px] lg:w-[600px] h-[350px] sm:h-[400px] lg:h-[500px] rounded-2xl overflow-hidden relative ${imageMode === 'webcam' ? 'bg-black' : 'bg-transparent'}`}>
+          <div className={`w-full max-w-[600px] h-[350px] sm:h-[450px] lg:max-w-[700px] lg:h-[550px] xl:max-w-[800px] xl:h-[650px] rounded-2xl overflow-hidden relative ${imageMode === 'webcam' ? 'bg-black' : 'bg-transparent'}`}>
             {/* Webcam Mode */}
             {imageMode === 'webcam' && (
               <>
@@ -720,44 +1007,48 @@ const Start = () => {
               </div>
             )}
           </div>
+          
+          <div className="flex justify-center">
+            {imageMode === 'dropzone' ? (
+              <button
+                onClick={handleToggleImageMode}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                title="Switch to Webcam"
+              >
+                📷 Switch to Webcam
+              </button>
+            ) : (
+              <button
+                onClick={handleToggleImageMode}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                title="Switch to Dropzone"
+              >
+                📁 Switch to Dropzone
+              </button>
+            )}
+          </div>
+
+          <ObjectInput onIdentify={handleIdentify} hasImage={!!screenshotImage || !!uploadedImage} />
         </div>
-
-        {/* Switch to Webcam Button - appears above textarea when in dropzone mode */}
-        {imageMode === 'dropzone' && (
-          <div className="flex justify-center mb-6">
-            <button
-              onClick={handleToggleImageMode}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-              title="Switch to Webcam"
-            >
-              📷 Switch to Webcam
-            </button>
-          </div>
-        )}
-
-        {/* Switch to Dropzone Button - appears above textarea when in webcam mode */}
-        {imageMode === 'webcam' && (
-          <div className="flex justify-center mb-6">
-            <button
-              onClick={handleToggleImageMode}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-              title="Switch to Dropzone"
-            >
-              📁 Switch to Dropzone
-            </button>
-          </div>
-        )}
-
-        <ObjectInput onIdentify={handleIdentify} hasImage={!!screenshotImage || !!uploadedImage} />
       </div>
 
-      {/* Right Side - Object History */}
-      <div className='w-72 lg:w-80 h-screen p-3 lg:p-4'>
-        <ObjectHistory 
-          onHistoryClick={handleHistoryClick}
-          objectHistory={objectHistory}
-          onClearAll={handleClearAll}
-        />
+      {/* Side Panel - Chat and History */}
+      <div className='w-full lg:w-96 lg:h-screen lg:flex-shrink-0 p-4'>
+        <div className='h-full flex flex-col gap-4'>
+          <div className='flex-1 min-h-[300px]'>
+            <ChatBox 
+              objectHistory={objectHistory}
+              onNewMessage={true}
+            />
+          </div>
+          <div className='flex-1 min-h-[300px]'>
+            <ObjectHistory 
+              onHistoryClick={handleHistoryClick}
+              objectHistory={objectHistory}
+              onClearAll={handleClearAll}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
