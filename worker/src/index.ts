@@ -113,11 +113,12 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const contents = messages.map((item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
 			if (item.imageUrl && item.mimeType) {
-				const fileData = {
-					mimeType: item.mimeType,
-					url: item.imageUrl,
-				};
-				parts.push(fileData);
+				parts.push({
+					fileData: {
+						mimeType: item.mimeType,
+						fileUri: item.imageUrl,
+					},
+				});
 			}
 			return {
 				parts,
