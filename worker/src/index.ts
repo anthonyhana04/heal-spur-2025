@@ -177,9 +177,9 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 			await env.MY_BUCKET.put(r2Key, data, {
 				httpMetadata: { contentType: mimeType },
 			});
-			msg = await saveMessage(env, userId, roomId, "model", contentOut, "image/jpg", r2Key);
+			msg = await saveMessage(env, userId, roomId, "assistant", contentOut, "image/jpg", r2Key);
 		} else {
-			msg = await saveMessage(env, userId, roomId, "model", contentOut);
+			msg = await saveMessage(env, userId, roomId, "assistant", contentOut);
 		}
 
 		return new Response(
