@@ -109,7 +109,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		const genAI = new GoogleGenAI({ apiKey: env.GOOGLE_API_KEY });
 		const { roomId, content, imageUrl, mimeType } = (await request.json() as any);
 		await saveMessage(env, userId, roomId, "user", content, mimeType, imageUrl);
-		const { messages } = (await getMessages(env, userId, roomId));
+		const { messages } = await getMessages(env, userId, roomId);
 		const contents = messages.map((item: ChatMessage) => {
 			const parts: any = [{ text: item.content }];
 			if (item.imageUrl && item.mimeType) {

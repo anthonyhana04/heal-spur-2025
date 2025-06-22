@@ -91,7 +91,7 @@ export async function saveMessage(env: Env, userId: string, roomId: string, role
 		role,
 		content,
 		mimeType,
-		...(imageUrl ? { key: imageUrl } : {}),
+		...(imageUrl ? { imageUrl: imageUrl } : {}),
 		...(mimeType ? { mimeType: mimeType } : {}),
 		timestamp: Date.now(),
 	};
@@ -117,14 +117,7 @@ export async function getMessages(env: Env, userId: string, roomId: string, curs
 	for (const { name } of list.keys) {
 		const raw = await env.CHAT_LOGS.get(name);
 		const obj = JSON.parse(raw || '{}');
-		if (raw) msgs.push({
-			id: obj.id,
-			role: obj.role,
-			content: obj.content,
-			imageUrl: `${env.BUCKET_URL}/${obj.key}`, // Assuming the image URL is constructed this way
-			mimeType: obj.mimeType,
-			timestamp: obj.timestamp,
-		});
+		if (raw) msgs.push(obj);
 	}
 	msgs.sort((a, b) => a.timestamp - b.timestamp);
 	return {
