@@ -168,20 +168,7 @@ async function handleGenerate(request: Request, env: Env): Promise<Response> {
 		});
 
 		const contentOut = response.text ?? "";
-		let msg;
-		if (response.data) {
-			const data = response.data; // base64 encoded file data
-			const fileName = "generated-file"; // Fallback name if not provided
-			// Persist in R2 (the key will be the original filename with uuid prefix)
-			const r2Key = `${crypto.randomUUID()}-${fileName}`;
-			await env.MY_BUCKET.put(r2Key, data, {
-				httpMetadata: { contentType: mimeType },
-			});
-			msg = await saveMessage(env, userId, roomId, "assistant", contentOut, "image/jpg", r2Key);
-		} else {
-			msg = await saveMessage(env, userId, roomId, "assistant", contentOut);
-		}
-
+		const msg = await saveMessage(env, userId, roomId, "assistant", contentOut);
 		return new Response(
 			JSON.stringify(msg),
 			{
