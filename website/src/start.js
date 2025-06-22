@@ -1,14 +1,42 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import Logo from './logo.png';
 
-const ObjectInput = () => {
+const ObjectInput = ({ onIdentify, hasImage }) => {
   const [text, setText] = useState('');
+  const [error, setError] = useState('');
 
   const onSubmit = (e) => {
     e.preventDefault();
-    alert(`Identifying: ${text}`);
+    
+    // Validate that we have an image
+    if (!hasImage) {
+      setError('Please take a screenshot or upload an image first before identifying objects');
+      return;
+    }
+    
+    // Validate that text is not empty
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      setError('Please enter an object name to identify');
+      return;
+    }
+    
+    // Validate text length
+    if (trimmedText.length > 100) {
+      setError('Object name is too long. Please keep it under 100 characters');
+      return;
+    }
+    
+    try {
+      onIdentify(trimmedText);
+      setText('');
+      setError('');
+    } catch (err) {
+      setError('Failed to identify object. Please try again.');
+      console.error('Identification error:', err);
+    }
   };
 
   return (
@@ -21,10 +49,42 @@ const ObjectInput = () => {
         placeholder='e.g., "a water bottle"' 
         rows={1}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          const newValue = e.target.value;
+          setText(newValue);
+          // Clear error when user starts typing
+          if (error) setError('');
+          // Prevent extremely long input
+          if (newValue.length > 100) {
+            setError('Object name is too long. Please keep it under 100 characters');
+          }
+        }}
+        onKeyDown={(e) => {
+          // Allow Enter to submit, but prevent other special keys
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            onSubmit(e);
+          }
+        }}
+        maxLength={100}
         required
       />
-      <button type="submit" className='bg-blue-600 text-white px-4 sm:px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105 text-sm sm:text-base whitespace-nowrap'>Identify</button>
+      <button 
+        type="submit" 
+        className={`px-4 sm:px-6 py-2 rounded-md transition transform hover:scale-105 text-sm sm:text-base whitespace-nowrap ${
+          hasImage 
+            ? 'bg-blue-600 text-white hover:bg-blue-700' 
+            : 'bg-gray-600 text-gray-300 cursor-not-allowed'
+        }`}
+        disabled={!hasImage || !text.trim()}
+      >
+        Identify
+      </button>
+      {error && (
+        <div className="w-full text-red-400 text-sm mt-2 text-center">
+          {error}
+        </div>
+      )}
     </form>
   );
 };
@@ -54,104 +114,7 @@ const BoundingBox = ({ x, y, width, height, label, color = 'lime' }) => {
   );
 };
 
-const ObjectHistory = ({ onHistoryClick, onBackClick, isHistoryView, selectedItem }) => {
-  const [objectHistory] = useState([
-    { 
-      id: 1, 
-      object: 'water bottle', 
-      timestamp: '2:30 PM', 
-      status: 'identified',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Water+Bottle',
-      boundingBoxes: [
-        { x: 150, y: 100, width: 100, height: 80, label: 'Water Bottle', color: 'lime' },
-        { x: 300, y: 150, width: 80, height: 60, label: 'Cap', color: 'blue' }
-      ],
-      details: {
-        brand: 'Evian',
-        price: '$2.99',
-        location: 'Local Store',
-        confidence: '95%'
-      }
-    },
-    { 
-      id: 2, 
-      object: 'coffee mug', 
-      timestamp: '2:32 PM', 
-      status: 'identified',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Coffee+Mug',
-      boundingBoxes: [
-        { x: 200, y: 120, width: 120, height: 100, label: 'Coffee Mug', color: 'red' }
-      ],
-      details: {
-        brand: 'Starbucks',
-        price: '$15.99',
-        location: 'Online Store',
-        confidence: '92%'
-      }
-    },
-    { 
-      id: 3, 
-      object: 'laptop', 
-      timestamp: '2:35 PM', 
-      status: 'identified',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Laptop',
-      boundingBoxes: [
-        { x: 100, y: 80, width: 250, height: 180, label: 'Laptop', color: 'yellow' },
-        { x: 120, y: 100, width: 200, height: 120, label: 'Screen', color: 'blue' }
-      ],
-      details: {
-        brand: 'MacBook Pro',
-        price: '$1,299',
-        location: 'Apple Store',
-        confidence: '98%'
-      }
-    },
-    { 
-      id: 4, 
-      object: 'phone charger', 
-      timestamp: '2:38 PM', 
-      status: 'searching',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Phone+Charger',
-      boundingBoxes: [],
-      details: {
-        brand: 'Unknown',
-        price: 'Searching...',
-        location: 'Searching...',
-        confidence: '45%'
-      }
-    },
-    { 
-      id: 5, 
-      object: 'notebook', 
-      timestamp: '2:40 PM', 
-      status: 'identified',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Notebook',
-      boundingBoxes: [
-        { x: 180, y: 140, width: 140, height: 100, label: 'Notebook', color: 'lime' }
-      ],
-      details: {
-        brand: 'Moleskine',
-        price: '$12.99',
-        location: 'Office Supply Store',
-        confidence: '89%'
-      }
-    },
-    { 
-      id: 6, 
-      object: 'headphones', 
-      timestamp: '2:42 PM', 
-      status: 'not found',
-      image: 'https://via.placeholder.com/400x300/1f2937/ffffff?text=Headphones',
-      boundingBoxes: [],
-      details: {
-        brand: 'Not Found',
-        price: 'N/A',
-        location: 'N/A',
-        confidence: '0%'
-      }
-    },
-  ]);
-
+const ObjectHistory = ({ onHistoryClick, objectHistory, onClearAll }) => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'identified': return 'text-green-400';
@@ -174,30 +137,41 @@ const ObjectHistory = ({ onHistoryClick, onBackClick, isHistoryView, selectedIte
     <div className="w-full h-full bg-gray-900/80 rounded-lg p-4 flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-white text-lg font-bold">Object History</h3>
-        <button className="text-gray-400 hover:text-white text-sm">Clear All</button>
+        <button 
+          className="text-gray-400 hover:text-white text-sm"
+          onClick={onClearAll}
+        >
+          Clear All
+        </button>
       </div>
       
       <div className="flex-1 overflow-y-auto space-y-2">
-        {objectHistory.map((item) => (
-          <div 
-            key={item.id} 
-            className="bg-gray-800/60 rounded-lg p-3 hover:bg-gray-800/80 transition-colors cursor-pointer"
-            onClick={() => onHistoryClick(item)}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-white font-medium text-sm">{item.object}</span>
-              <span className={`text-xs ${getStatusColor(item.status)}`}>
-                {getStatusIcon(item.status)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400 text-xs">{item.timestamp}</span>
-              <span className={`text-xs capitalize ${getStatusColor(item.status)}`}>
-                {item.status}
-              </span>
-            </div>
+        {objectHistory.length === 0 ? (
+          <div className="text-center text-gray-400 text-sm py-8">
+            No objects identified yet
           </div>
-        ))}
+        ) : (
+          objectHistory.map((item) => (
+            <div 
+              key={item.id} 
+              className="bg-gray-800/60 rounded-lg p-3 hover:bg-gray-800/80 transition-colors cursor-pointer"
+              onClick={() => onHistoryClick(item)}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-white font-medium text-sm">{item.object}</span>
+                <span className={`text-xs ${getStatusColor(item.status)}`}>
+                  {getStatusIcon(item.status)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-400 text-xs">{item.timestamp}</span>
+                <span className={`text-xs capitalize ${getStatusColor(item.status)}`}>
+                  {item.status}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
       </div>
       
       <div className="mt-4 pt-4 border-t border-gray-700">
@@ -221,26 +195,64 @@ const Start = () => {
   ]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
   const [showHistoryImage, setShowHistoryImage] = useState(false);
+  const [screenshotImage, setScreenshotImage] = useState(null);
+  const [objectHistory, setObjectHistory] = useState([]);
+  const [imageMode, setImageMode] = useState('webcam'); // 'webcam' or 'dropzone'
   const fileInputRef = useRef(null);
+  const webcamRef = useRef(null);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      setUploadedImage(URL.createObjectURL(file));
-      setShowHistoryImage(false);
-      setSelectedHistoryItem(null);
+  const handleToggleImageMode = () => {
+    try {
+      if (imageMode === 'webcam') {
+        setImageMode('dropzone');
+        setTurnOnCam(false);
+        setScreenshotImage(null);
+        setShowHistoryImage(false);
+        setSelectedHistoryItem(null);
+      } else {
+        setImageMode('webcam');
+        setUploadedImage(null);
+        setShowHistoryImage(false);
+        setSelectedHistoryItem(null);
+      }
+    } catch (err) {
+      console.error('Error toggling image mode:', err);
     }
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      setUploadedImage(URL.createObjectURL(file));
+  const handleFileChange = (e) => {
+    try {
+      const file = e.target.files[0];
+      if (!file) {
+        console.warn('No file selected');
+        return;
+      }
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        console.error('Invalid file type. Please select an image file.');
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        console.error('File too large. Please select an image under 10MB.');
+        return;
+      }
+      
+      // Create object URL and update state
+      const imageUrl = URL.createObjectURL(file);
+      setUploadedImage(imageUrl);
+      setScreenshotImage(null);
       setShowHistoryImage(false);
       setSelectedHistoryItem(null);
+      setImageMode('dropzone'); // Switch to dropzone mode
+      
+      // Reset file input
+      e.target.value = '';
+    } catch (err) {
+      console.error('Error handling file upload:', err);
     }
   };
 
@@ -258,37 +270,286 @@ const Start = () => {
   const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Check if we're actually leaving the dropzone container
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    
+    if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
+    
+    try {
+      const files = e.dataTransfer.files;
+      if (!files || files.length === 0) {
+        console.warn('No files dropped');
+        return;
+      }
+      
+      const file = files[0];
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        console.error('Invalid file type. Please drop an image file.');
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        console.error('File too large. Please drop an image under 10MB.');
+        return;
+      }
+      
+      // Create object URL and update state
+      const imageUrl = URL.createObjectURL(file);
+      setUploadedImage(imageUrl);
+      setScreenshotImage(null);
+      setShowHistoryImage(false);
+      setSelectedHistoryItem(null);
+      setImageMode('dropzone'); // Switch to dropzone mode
+    } catch (err) {
+      console.error('Error handling file drop:', err);
+    }
   };
 
   const handleDivClick = () => {
-    fileInputRef.current.click();
+    try {
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      } else {
+        console.error('File input reference not found');
+      }
+    } catch (err) {
+      console.error('Error clicking file input:', err);
+    }
   };
 
   const handleHistoryClick = (item) => {
-    setSelectedHistoryItem(item);
-    setShowHistoryImage(true);
-    setTurnOnCam(false);
-    setUploadedImage(null);
-  };
-
-  const handleCameraClick = () => {
-    setTurnOnCam(true);
-    setShowHistoryImage(false);
-    setSelectedHistoryItem(null);
-    setUploadedImage(null);
+    try {
+      if (!item || !item.sourceArea) {
+        console.error('Invalid history item');
+        return;
+      }
+      
+      setSelectedHistoryItem(item);
+      
+      if (item.sourceArea === 'webcam') {
+        // Display in webcam area
+        setShowHistoryImage(true);
+        setTurnOnCam(false);
+        setScreenshotImage(null);
+        setUploadedImage(null);
+        setImageMode('webcam');
+      } else if (item.sourceArea === 'dropzone') {
+        // Display in dropzone area
+        setShowHistoryImage(false);
+        setTurnOnCam(false);
+        setScreenshotImage(null);
+        setImageMode('dropzone');
+        
+        // Check if the image exists and is valid
+        if (item.image) {
+          setUploadedImage(item.image);
+        } else {
+          console.error('History item has no valid image');
+          setUploadedImage(null);
+        }
+      } else {
+        console.error('Unknown source area:', item.sourceArea);
+      }
+    } catch (err) {
+      console.error('Error handling history click:', err);
+    }
   };
 
   const handleCameraToggle = () => {
-    if (turnOnCam) {
-      setTurnOnCam(false);
-    } else {
-      setTurnOnCam(true);
-      setShowHistoryImage(false);
-      setSelectedHistoryItem(null);
-      setUploadedImage(null);
+    try {
+      if (turnOnCam) {
+        setTurnOnCam(false);
+      } else {
+        setTurnOnCam(true);
+        setShowHistoryImage(false);
+        setSelectedHistoryItem(null);
+        setScreenshotImage(null);
+        setUploadedImage(null);
+        setImageMode('webcam');
+      }
+    } catch (err) {
+      console.error('Error toggling camera:', err);
     }
   };
+
+  const captureScreenshot = () => {
+    try {
+      if (!webcamRef.current) {
+        console.error('Webcam reference not found');
+        return;
+      }
+      
+      const imageSrc = webcamRef.current.getScreenshot();
+      if (!imageSrc) {
+        console.error('Failed to capture screenshot');
+        return;
+      }
+      
+      setScreenshotImage(imageSrc);
+      setTurnOnCam(false);
+      setUploadedImage(null);
+      setImageMode('webcam');
+    } catch (err) {
+      console.error('Error capturing screenshot:', err);
+    }
+  };
+
+  const handleIdentify = (objectName) => {
+    try {
+      // Validate input
+      if (!objectName || typeof objectName !== 'string') {
+        console.error('Invalid object name provided');
+        return;
+      }
+      
+      const trimmedName = objectName.trim();
+      if (!trimmedName) {
+        console.error('Object name cannot be empty');
+        return;
+      }
+      
+      // Check if either screenshot or uploaded image is available
+      const currentImage = screenshotImage || uploadedImage;
+      if (!currentImage) {
+        console.error('No image available for identification');
+        return;
+      }
+
+      // Determine the source area
+      const sourceArea = screenshotImage ? 'webcam' : 'dropzone';
+
+      // Get current timestamp
+      const now = new Date();
+      const timestamp = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      // Convert blob URL to data URL if needed for persistence
+      const processImageForHistory = async (imageUrl) => {
+        if (imageUrl.startsWith('blob:')) {
+          try {
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          } catch (err) {
+            console.error('Error converting blob to data URL:', err);
+            return imageUrl; // Fallback to original URL
+          }
+        }
+        return imageUrl; // Already a data URL or other format
+      };
+
+      // Process the image and create history item
+      processImageForHistory(currentImage).then(processedImage => {
+        // Create a new history item
+        const newItem = {
+          id: Date.now(), // Use timestamp as unique ID
+          object: trimmedName,
+          timestamp: timestamp,
+          status: 'searching', // Start with searching status
+          image: processedImage,
+          boundingBoxes: [...boundingBoxes], // Create a copy to avoid reference issues
+          sourceArea: sourceArea, // Track which area this came from
+          details: {
+            brand: 'Searching...',
+            price: 'Searching...',
+            location: 'Searching...',
+            confidence: '0%'
+          }
+        };
+
+        // Add to history
+        setObjectHistory(prev => [newItem, ...prev]);
+
+        // Simulate identification process (you can replace this with actual API call)
+        setTimeout(() => {
+          setObjectHistory(prev => 
+            prev.map(item => 
+              item.id === newItem.id 
+                ? {
+                    ...item,
+                    status: 'identified',
+                    details: {
+                      brand: 'Sample Brand',
+                      price: '$19.99',
+                      location: 'Online Store',
+                      confidence: '85%'
+                    }
+                  }
+                : item
+            )
+          );
+        }, 2000);
+      });
+    } catch (err) {
+      console.error('Error in handleIdentify:', err);
+    }
+  };
+
+  const handleClearAll = () => {
+    try {
+      setObjectHistory([]);
+    } catch (err) {
+      console.error('Error clearing history:', err);
+    }
+  };
+
+  const handleClearUploadedImage = () => {
+    try {
+      setUploadedImage(null);
+      // Clear dropzone history item if it's selected
+      if (selectedHistoryItem && selectedHistoryItem.sourceArea === 'dropzone') {
+        setSelectedHistoryItem(null);
+      }
+      // Reset drag state to ensure dropzone remains functional
+      setIsDragging(false);
+    } catch (err) {
+      console.error('Error clearing uploaded image:', err);
+    }
+  };
+
+  // Monitor drag state and reset if stuck
+  useEffect(() => {
+    if (isDragging) {
+      const timeout = setTimeout(() => {
+        setIsDragging(false);
+      }, 1000); // Reset after 1 second if still dragging
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [isDragging]);
+
+  // Reset drag state when component mounts or when uploaded image changes
+  useEffect(() => {
+    setIsDragging(false);
+  }, [uploadedImage]);
+
+  // Cleanup object URLs when component unmounts or when images change
+  useEffect(() => {
+    return () => {
+      // Cleanup blob URLs when they're no longer the current uploaded image
+      if (uploadedImage && uploadedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(uploadedImage);
+      }
+    };
+  }, [uploadedImage]);
 
   return (
     <div className='min-h-screen animated-gradient relative flex'>
@@ -302,111 +563,200 @@ const Start = () => {
 
       {/* Left Side - Main Content */}
       <div className='flex-1 flex flex-col items-center justify-center p-4 lg:p-6'>
-        <div className='flex flex-col lg:flex-row items-center justify-center w-full gap-4 lg:gap-6 mb-4 lg:mb-6'>
-          {/* Webcam */}
-          <div className='w-full sm:w-[400px] lg:w-[450px] h-[280px] sm:h-[350px] lg:h-[450px] rounded-2xl overflow-hidden bg-black relative'>
-            {showHistoryImage && selectedHistoryItem ? (
+        <div className='flex flex-col items-center justify-center w-full gap-4 lg:gap-6 mb-4 lg:mb-6'>
+          {/* Unified Image Area */}
+          <div className={`w-full sm:w-[500px] lg:w-[600px] h-[350px] sm:h-[400px] lg:h-[500px] rounded-2xl overflow-hidden relative ${imageMode === 'webcam' ? 'bg-black' : 'bg-transparent'}`}>
+            {/* Webcam Mode */}
+            {imageMode === 'webcam' && (
               <>
-                <img 
-                  src={selectedHistoryItem.image} 
-                  alt={selectedHistoryItem.object} 
-                  className='w-full h-full object-cover'
-                />
-                {selectedHistoryItem.boundingBoxes.map((box, index) => (
-                  <BoundingBox 
-                    key={index}
-                    x={box.x}
-                    y={box.y}
-                    width={box.width}
-                    height={box.height}
-                    label={box.label}
-                    color={box.color}
-                  />
-                ))}
-              </>
-            ) : turnOnCam ? (
-              <>
-                <Webcam
-                  audio={false}
-                  mirrored={true}
-                  className='w-full h-full object-cover'
-                />
-                {boundingBoxes.map((box, index) => (
-                  <BoundingBox 
-                    key={index}
-                    x={box.x}
-                    y={box.y}
-                    width={box.width}
-                    height={box.height}
-                    label={box.label}
-                    color={box.color}
-                  />
-                ))}
-              </>
-            ) : (
-              <button 
-                className='w-full h-full text-white text-lg sm:text-xl font-bold flex items-center justify-center text-center px-4' 
-                onClick={handleCameraToggle}
-              >
-                {turnOnCam ? 'Turn off Camera' : 'Press to turn on Camera'}
-              </button>
-            )}
-          </div>
-          
-          {/* Dropzone */}
-          <div className='w-full sm:w-[400px] lg:w-[450px] h-[280px] sm:h-[350px] lg:h-[450px] rounded-2xl border-4 border-dashed border-gray-600 relative'>
-            <div 
-              className={`w-full h-full flex flex-col items-center justify-center text-gray-400 transition-colors cursor-pointer ${isDragging ? 'border-blue-500 bg-gray-800/50' : ''}`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onClick={handleDivClick}
-            >
-              <input 
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept="image/*"
-              />
-              {uploadedImage ? (
-                <div className="w-full h-full relative">
-                  <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover rounded-xl" />
-                  {boundingBoxes.map((box, index) => (
-                    <BoundingBox 
-                      key={index}
-                      x={box.x}
-                      y={box.y}
-                      width={box.width}
-                      height={box.height}
-                      label={box.label}
-                      color={box.color}
+                {showHistoryImage && selectedHistoryItem ? (
+                  <>
+                    <img 
+                      src={selectedHistoryItem.image} 
+                      alt={selectedHistoryItem.object} 
+                      className='w-full h-full object-cover'
                     />
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <svg className="w-8 h-8 sm:w-12 sm:h-12 mb-2 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                  <p className="text-center text-sm sm:text-base">Drag & drop an image here</p>
-                  <p className="text-xs sm:text-sm">or</p>
-                  <p className="font-bold text-blue-500 text-sm sm:text-base">Click to browse</p>
-                </>
-              )}
-            </div>
+                    {selectedHistoryItem.boundingBoxes.map((box, index) => (
+                      <BoundingBox 
+                        key={index}
+                        x={box.x}
+                        y={box.y}
+                        width={box.width}
+                        height={box.height}
+                        label={box.label}
+                        color={box.color}
+                      />
+                    ))}
+                  </>
+                ) : screenshotImage ? (
+                  <>
+                    <img 
+                      src={screenshotImage} 
+                      alt="Screenshot" 
+                      className='w-full h-full object-cover'
+                    />
+                    {boundingBoxes.map((box, index) => (
+                      <BoundingBox 
+                        key={index}
+                        x={box.x}
+                        y={box.y}
+                        width={box.width}
+                        height={box.height}
+                        label={box.label}
+                        color={box.color}
+                      />
+                    ))}
+                    {/* Retake Screenshot Button */}
+                    <button
+                      onClick={() => {
+                        setScreenshotImage(null);
+                        setTurnOnCam(true);
+                      }}
+                      className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
+                      title="Retake Screenshot"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  </>
+                ) : turnOnCam ? (
+                  <>
+                    <Webcam
+                      audio={false}
+                      mirrored={true}
+                      className='w-full h-full object-cover'
+                      ref={webcamRef}
+                    />
+                    {boundingBoxes.map((box, index) => (
+                      <BoundingBox 
+                        key={index}
+                        x={box.x}
+                        y={box.y}
+                        width={box.width}
+                        height={box.height}
+                        label={box.label}
+                        color={box.color}
+                      />
+                    ))}
+                    {/* Screenshot Button */}
+                    <button
+                      onClick={captureScreenshot}
+                      className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
+                      title="Take Screenshot"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    className='w-full h-full text-white text-lg sm:text-xl font-bold flex flex-col items-center justify-center text-center px-4' 
+                    onClick={handleCameraToggle}
+                  >
+                    <div className="mb-4">
+                      {turnOnCam ? 'Turn off Camera' : 'Press to turn on Camera'}
+                    </div>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Dropzone Mode */}
+            {imageMode === 'dropzone' && (
+              <div 
+                className={`w-full h-full flex flex-col items-center justify-center text-gray-400 transition-colors ${isDragging ? 'border-blue-500 bg-gray-800/50' : ''} ${!uploadedImage ? 'cursor-pointer' : ''}`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onClick={!uploadedImage ? handleDivClick : undefined}
+              >
+                <input 
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                  accept="image/*"
+                />
+                {uploadedImage ? (
+                  <div className="w-full h-full relative bg-transparent">
+                    <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover rounded-xl" />
+                    {(selectedHistoryItem && selectedHistoryItem.sourceArea === 'dropzone' 
+                      ? selectedHistoryItem.boundingBoxes 
+                      : boundingBoxes
+                    ).map((box, index) => (
+                      <BoundingBox 
+                        key={index}
+                        x={box.x}
+                        y={box.y}
+                        width={box.width}
+                        height={box.height}
+                        label={box.label}
+                        color={box.color}
+                      />
+                    ))}
+                    {/* Clear Uploaded Image Button */}
+                    <button
+                      onClick={handleClearUploadedImage}
+                      className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white p-2 rounded-full shadow-lg transition-colors"
+                      title="Clear Image"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <svg className="w-8 h-8 sm:w-12 sm:h-12 mb-2 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    <p className="text-center text-sm sm:text-base">Drag & drop an image here</p>
+                    <p className="text-xs sm:text-sm">or</p>
+                    <p className="font-bold text-blue-500 text-sm sm:text-base">Click to browse</p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        <ObjectInput />
+        {/* Switch to Webcam Button - appears above textarea when in dropzone mode */}
+        {imageMode === 'dropzone' && (
+          <div className="flex justify-center mb-6">
+            <button
+              onClick={handleToggleImageMode}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+              title="Switch to Webcam"
+            >
+              📷 Switch to Webcam
+            </button>
+          </div>
+        )}
+
+        {/* Switch to Dropzone Button - appears above textarea when in webcam mode */}
+        {imageMode === 'webcam' && (
+          <div className="flex justify-center mb-6">
+            <button
+              onClick={handleToggleImageMode}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+              title="Switch to Dropzone"
+            >
+              📁 Switch to Dropzone
+            </button>
+          </div>
+        )}
+
+        <ObjectInput onIdentify={handleIdentify} hasImage={!!screenshotImage || !!uploadedImage} />
       </div>
 
       {/* Right Side - Object History */}
       <div className='w-72 lg:w-80 h-screen p-3 lg:p-4'>
         <ObjectHistory 
           onHistoryClick={handleHistoryClick}
-          onBackClick={() => {}}
-          isHistoryView={false}
-          selectedItem={null}
+          objectHistory={objectHistory}
+          onClearAll={handleClearAll}
         />
       </div>
     </div>
