@@ -1,26 +1,671 @@
-import { fromHono } from "chanfana";
-import { Hono } from "hono";
-import { TaskCreate } from "./endpoints/taskCreate";
-import { TaskDelete } from "./endpoints/taskDelete";
-import { TaskFetch } from "./endpoints/taskFetch";
-import { TaskList } from "./endpoints/taskList";
+import { AutoRouter } from "itty-router";
+import { deleteSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
+import { Env } from "./envTypes";
+import { uuidv7 } from "uuidv7";
 
-// Start a Hono app
-const app = new Hono<{ Bindings: Env }>();
+/**
+ * Welcome to Cloudflare Workers! This is your first worker.
+ *
+ * - Run `npm run dev` in your terminal to start a development server
+ * - Open a browser tab at http://localhost:8787/ to see your worker in action
+ * - Run `npm run deploy` to publish your worker
+ *
+ * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
+ * `Env` object can be regenerated with `npm run cf-typegen`.
+ *
+ * Learn more at https://developers.cloudflare.com/workers/
+ */
 
-// Setup OpenAPI registry
-const openapi = fromHono(app, {
-	docs_url: "/",
-});
+async function handleRegister(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+	};
+	const { username, password } = await req.json<{
+		username: string;
+		password: string;
+	}>();
+	const salt = crypto.getRandomValues(new Uint8Array(16));
+	const hashedPassword = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(password + salt)
+	);
+	// Base64 encode the hashed password
+	const base64Salt = btoa(String.fromCharCode(...salt));
+	try {
+		await storeUser(env, {
+			username,
+			passwordHash: btoa(String.fromCharCode(...new Uint8Array(hashedPassword))),
+			salt: base64Salt,
+		});
+	} catch (error) {
+		console.error("Error storing user:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+	return new Response(`User ${username} registered successfully`, {
+		status: 201,
+		headers: {
+			"Content-Type": "text/plain",
+			...corsHeaders,
+		}
+	});
+}
 
-// Register OpenAPI endpoints
-openapi.get("/api/tasks", TaskList);
-openapi.post("/api/tasks", TaskCreate);
-openapi.get("/api/tasks/:taskSlug", TaskFetch);
-openapi.delete("/api/tasks/:taskSlug", TaskDelete);
+async function handleLogin(req: Request, env: Env): Promise<Response> {
+	const { username, password } = await req.json<{
+		username: string;
+		password: string;
+	}>();
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+	};
+	try {
+		const user = await loadUser(env, username);
+		if (!user) {
+			return new Response("User not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				}
+			});
+		}
+		const { passwordHash, salt } = user;
+		const hashedPassword = await crypto.subtle.digest(
+			"SHA-256",
+			new TextEncoder().encode(password + atob(salt))
+		);
+		if (btoa(String.fromCharCode(...new Uint8Array(hashedPassword))) === passwordHash) {
+			const sessionId = uuidv7();
+			// Store the session ID in a cookie or database as needed
+			storeSession(env, {
+				sessionId,
+				username,
+			}).catch((error) => {
+				console.error("Error storing session:", error);
+			});
+			return new Response(`Login successful, session ID: ${sessionId}`, {
+				status: 200,
+				headers: {
+					"Set-Cookie": `sessionId=${sessionId}; HttpOnly; Secure; SameSite=Strict`,
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		} else {
+			return new Response("Invalid credentials", {
+				status: 401,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				}
+			});
+		}
+	} catch (error) {
+		console.error("Error during login:", error);
+		return new Response("Internal Server Error", { status: 500 });
+	}
+}
 
-// You may also register routes for non OpenAPI directly on Hono
-// app.get('/test', (c) => c.text('Hono!'))
+async function handleLogout(req: Request, env: Env): Promise<Response> {
+	const sessionId = getSessionId(req);
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+	try {
+		await deleteSession(env, sessionId);
+		return new Response("Logout successful", {
+			status: 200,
+			headers: {
+				"Set-Cookie": "sessionId=; HttpOnly; Secure; SameSite=Strict; Max-Age=0",
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error during logout:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
 
-// Export the Hono app
-export default app;
+async function handleCreateRoom(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const { username } = session;
+		const { name } = await req.json<{ name: string }>();
+		const roomId = crypto.randomUUID();
+		const room = {
+			roomId,
+			name,
+			owner: username,
+		}
+		await storeRoom(env, room);
+		return new Response(JSON.stringify(room), {
+			status: 201,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching rooms:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+async function handleGetRooms(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	try {
+		const sessionId = getSessionId(req);
+		if (!sessionId) {
+			return new Response("Not logged in", {
+				status: 401,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const rooms = await loadRooms(env, session.username);
+		return new Response(JSON.stringify(rooms), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching rooms:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+async function handleGetRoom(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const roomId = new URL(req.url).searchParams.get("roomId");
+		if (!roomId) {
+			return new Response("Room ID is required", {
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const room = await loadRoom(env, roomId);
+		if (!room) {
+			return new Response("Room not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		return new Response(JSON.stringify(room), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching room:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+async function handleUploadImage(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return Promise.resolve(new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		}));
+	}
+	const mimeType = req.headers.get("Content-Type");
+	if (!mimeType || !mimeType.startsWith("image/")) {
+		return Promise.resolve(new Response("Invalid image format", {
+			status: 400,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		}));
+	}
+	try {
+		const key = `images/${crypto.randomUUID()}`;
+		const imgageData = await req.arrayBuffer();
+		if (!imgageData) {
+			return Promise.resolve(new Response("No image data provided", {
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				}
+			}));
+		}
+		const storeImagePromise = storeImage(env, {
+			key,
+			data: imgageData,
+			mimeType,
+		});
+		const imageDataBase64 = btoa(String.fromCharCode(...new Uint8Array(imgageData)));
+		const storeImageBase64Promise = storeImageBase64(env, {
+			key,
+			data: imageDataBase64,
+			mimeType,
+		});
+		await storeImagePromise;
+		await storeImageBase64Promise;
+		return new Response(JSON.stringify({ key }), {
+			status: 201,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	}
+	catch (error) {
+		console.error("Error uploading image:", error);
+		return Promise.resolve(new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		}));
+	}
+}
+
+async function handleGetMessages(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const roomId = new URL(req.url).searchParams.get("roomId");
+		if (!roomId) {
+			return new Response("Room ID is required", {
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const cursor = new URL(req.url).searchParams.get("cursor") || null;
+		const messages = await loadMessagesIdByRoom(env, roomId, cursor);
+		return new Response(JSON.stringify(messages), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching messages:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+async function handleGetMessage(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const messageId = new URL(req.url).searchParams.get("messageId");
+		if (!messageId) {
+			return new Response("Message ID is required", {
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const message = await loadMessage(env, messageId);
+		if (!message) {
+			return new Response("Message not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		return new Response(JSON.stringify(message), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching message:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "POST",
+		"Access-Control-Allow-Headers": "Content-Type",
+		"Access-Control-Allow-Credentials": "true",
+	};
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await loadSession(env, sessionId);
+		if (!session) {
+			return new Response("Session not found", {
+				status: 404,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const { roomId, content, imageKey } = await req.json<{ roomId: string; content: string, imageKey: string | undefined }>();
+		if (!roomId || !content) {
+			return new Response("Room ID and content are required", {
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain",
+					...corsHeaders,
+				},
+			});
+		}
+		const oldMessageIds = await loadMessagesIdByRoom(env, roomId, null);
+		const messages = (await Promise.all(oldMessageIds.messageIds.map(async id => await loadMessage(env, id)))).filter(m => m !== null);
+		const messageId = uuidv7();
+		const message = {
+			id: messageId,
+			roomId,
+			role: UserRole.USER,
+			text: content,
+			imageKey: imageKey || undefined,
+		};
+		messages.push(message);
+		const history = await Promise.all(messages.map(async m => {
+			if (m.imageKey) {
+				const imageb64 = await loadImageBase64(env, m.imageKey);
+				if (!imageb64) {
+					throw new Error("Image not found");
+				}
+				const { data, mimeType } = imageb64;
+				const uri = `data:${mimeType};base64,${data}`;
+				return {
+					role: m.role,
+					content: {
+						type: "image",
+						uri: uri,
+					}
+				};
+			}
+			return {
+				role: m.role,
+				content: m.text,
+			};
+		}));
+		const stream = await env.AI.run("@cf/google/gemma-3-12b-it", {
+			messages: history,
+			stream: true,
+		});
+		await storeMessage(env, message);
+		// store output message
+		const outputMessage = {
+			id: uuidv7(),
+			roomId,
+			role: UserRole.ASSISTANT,
+			text: "",
+			imageKey: undefined,
+		};
+		const reader = stream.getReader();
+		const { readable, writable } = new TransformStream();
+		async function processStream() {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) {
+					writable.getWriter().close();
+					// Store the final output message
+					if (outputMessage.text) {
+						await storeMessage(env, outputMessage);
+					}
+					break;
+				}
+				if (value.type === "text") {
+					outputMessage.text += value.text;
+				}
+				writable.getWriter().write(value);
+			}
+		}
+		processStream().catch(error => {
+			console.error("Error processing stream:", error);
+			writable.getWriter().abort(error);
+		});
+		// Create a response stream
+		return new Response(readable, {
+			headers: {
+				"Content-Type": "text/event-stream",
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error creating message:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
+function getSessionId(req: Request): string | null {
+	const authHeader = req.headers.get("Cookie") || "";
+	const match = authHeader.match(/sessionId=([^;]+)/);
+	return match ? match[1] : null;
+}
+
+const router = AutoRouter();
+router
+	.post("/api/register", handleRegister)
+	.post("/api/login", handleLogin)
+	.post("/api/logout", handleLogout)
+	.post("/api/room", handleCreateRoom)
+	.get("/api/rooms", handleGetRooms)
+	.get("/api/room", handleGetRoom)
+	.post("/api/image", handleUploadImage)
+	.get("/api/messages", handleGetMessages)
+	.get("/api/message", handleGetMessage)
+	.post("/api/message", handleCreateMessage);
+
+export default router satisfies ExportedHandler<Env>;
