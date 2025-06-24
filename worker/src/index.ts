@@ -21,6 +21,16 @@ const registerCors = {
 	"Access-Control-Allow-Headers": "Content-Type",
 };
 
+async function hashPassword(password: string, salt: Uint8Array): Promise<string> {
+	const encoder = new TextEncoder();
+	const encodedPassword = encoder.encode(password);
+	const hashedBuffer = await crypto.subtle.digest(
+		"SHA-256",
+		new Uint8Array([...salt, ...encodedPassword])
+	);
+	return btoa(String.fromCharCode(...new Uint8Array(hashedBuffer)));
+}
+
 async function handleRegister(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = registerCors;
 	const { username, password } = await req.json<{
@@ -28,16 +38,12 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
 		password: string;
 	}>();
 	const salt = crypto.getRandomValues(new Uint8Array(16));
-	const hashedPassword = await crypto.subtle.digest(
-		"SHA-256",
-		new TextEncoder().encode(password + salt)
-	);
-	// Base64 encode the hashed password
+	const hashedPassword = await hashPassword(password, salt);
 	const base64Salt = btoa(String.fromCharCode(...salt));
 	try {
 		await storeUser(env, {
 			username,
-			passwordHash: btoa(String.fromCharCode(...new Uint8Array(hashedPassword))),
+			passwordHash: hashedPassword,
 			salt: base64Salt,
 		});
 	} catch (error) {
@@ -83,11 +89,9 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
 			});
 		}
 		const { passwordHash, salt } = user;
-		const hashedPassword = await crypto.subtle.digest(
-			"SHA-256",
-			new TextEncoder().encode(password + atob(salt))
-		);
-		if (btoa(String.fromCharCode(...new Uint8Array(hashedPassword))) === passwordHash) {
+		const saltBytes = Uint8Array.from(atob(salt), c => c.charCodeAt(0));
+		const hashedPassword = await hashPassword(password, saltBytes);
+		if (hashedPassword === passwordHash) {
 			const sessionId = uuidv7();
 			// Store the session ID in a cookie or database as needed
 			storeSession(env, {
@@ -653,8 +657,10 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 }
 
 function getSessionId(req: Request): string | null {
+	console.log("Request Headers:", req.headers);
 	const authHeader = req.headers.get("Cookie") || "";
 	const match = authHeader.match(/sessionId=([^;]+)/);
+	console.log("Auth Header:", authHeader);
 	return match ? match[1] : null;
 }
 
