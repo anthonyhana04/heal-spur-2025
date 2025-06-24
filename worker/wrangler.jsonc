@@ -28,7 +28,11 @@
 			"bucket_name": "images",
 			"binding": "images"
 		}
-	]
+	],
+	"ai": {
+		"binding": "AI",
+		"experimental_remote": true
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

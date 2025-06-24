@@ -15,13 +15,14 @@ import { uuidv7 } from "uuidv7";
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
+const registerCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+};
 
 async function handleRegister(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-	};
+	const corsHeaders = registerCors;
 	const { username, password } = await req.json<{
 		username: string;
 		password: string;
@@ -58,16 +59,18 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
 	});
 }
 
+const loginCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+};
+
 async function handleLogin(req: Request, env: Env): Promise<Response> {
 	const { username, password } = await req.json<{
 		username: string;
 		password: string;
 	}>();
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-	};
+	const corsHeaders = loginCors;
 	try {
 		const user = await loadUser(env, username);
 		if (!user) {
@@ -116,14 +119,15 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const logoutCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+};
+
 async function handleLogout(req: Request, env: Env): Promise<Response> {
 	const sessionId = getSessionId(req);
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = logoutCors;
 	if (!sessionId) {
 		return new Response("Not logged in", {
 			status: 401,
@@ -155,13 +159,15 @@ async function handleLogout(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const roomCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
+};
+
 async function handleCreateRoom(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = roomCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -211,13 +217,14 @@ async function handleCreateRoom(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const getRoomsCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
+};
 async function handleGetRooms(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "GET",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = getRoomsCors;
 	try {
 		const sessionId = getSessionId(req);
 		if (!sessionId) {
@@ -260,12 +267,7 @@ async function handleGetRooms(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleGetRoom(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "GET",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = roomCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -326,13 +328,15 @@ async function handleGetRoom(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const uploadImageCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
+};
+
 async function handleUploadImage(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = uploadImageCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return Promise.resolve(new Response("Not logged in", {
@@ -398,13 +402,15 @@ async function handleUploadImage(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const getMessagesCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
+};
+
 async function handleGetMessages(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "GET",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = getMessagesCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -457,13 +463,15 @@ async function handleGetMessages(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const messageCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
+};
+
 async function handleGetMessage(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "GET",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = messageCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -525,12 +533,7 @@ async function handleGetMessage(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = {
-		"Access-Control-Allow-Origin": "*",
-		"Access-Control-Allow-Methods": "POST",
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Credentials": "true",
-	};
+	const corsHeaders = messageCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -657,14 +660,46 @@ function getSessionId(req: Request): string | null {
 
 const router = AutoRouter();
 router
+	.options("/api/register", () => new Response(null, {
+		status: 204,
+		headers: registerCors,
+	}))
 	.post("/api/register", handleRegister)
+	.options("/api/login", () => new Response(null, {
+		status: 204,
+		headers: loginCors,
+	}))
 	.post("/api/login", handleLogin)
+	.options("/api/logout", () => new Response(null, {
+		status: 204,
+		headers: logoutCors,
+	}))
 	.post("/api/logout", handleLogout)
+	.options("/api/room", () => new Response(null, {
+		status: 204,
+		headers: roomCors,
+	}))
 	.post("/api/room", handleCreateRoom)
-	.get("/api/rooms", handleGetRooms)
 	.get("/api/room", handleGetRoom)
+	.options("/api/rooms", () => new Response(null, {
+		status: 204,
+		headers: getRoomsCors,
+	}))
+	.get("/api/rooms", handleGetRooms)
+	.options("/api/image", () => new Response(null, {
+		status: 204,
+		headers: uploadImageCors,
+	}))
 	.post("/api/image", handleUploadImage)
+	.options("/api/messages", () => new Response(null, {
+		status: 204,
+		headers: getMessagesCors,
+	}))
 	.get("/api/messages", handleGetMessages)
+	.options("/api/message", () => new Response(null, {
+		status: 204,
+		headers: messageCors,
+	}))
 	.get("/api/message", handleGetMessage)
 	.post("/api/message", handleCreateMessage);
 
