@@ -1,6 +1,5 @@
 import { AutoRouter } from "itty-router";
 import { deleteSession, extendSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, Message, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
-import { Env } from "./envTypes";
 import { uuidv7 } from "uuidv7";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 
