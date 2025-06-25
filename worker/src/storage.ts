@@ -192,8 +192,7 @@ export async function loadMessage(env: Env, messageId: string): Promise<Message 
 	return null;
 }
 
-export async function loadMessagesIdByRoom(env: Env, roomId: string, cursor: string | null): Promise<{ messageIds: string[], cursor: string | null }> {
-	const limit = 100; // Number of messages to fetch per request
+export async function loadMessagesIdByRoom(env: Env, roomId: string, cursor: string | null, limit = 16): Promise<{ messageIds: string[], cursor: string | null }> {
 	let query = `
 		SELECT id FROM messages WHERE roomId = ? ORDER BY id DESC LIMIT ?
 	`;

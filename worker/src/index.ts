@@ -572,18 +572,22 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			});
 		}
 		const oldMessageIds = await loadMessagesIdByRoom(env, roomId, null);
-		const messages = (await Promise.all(oldMessageIds.messageIds.map(async id => await loadMessage(env, id)))).filter(m => m !== null);
-		const messageId = uuidv7();
+		const history = (await Promise.all(oldMessageIds.messageIds.map(async id => {
+			const m = await loadMessage(env, id);
+			if (!m) {
+				return null; // Skip if message not found
+			}
+			return await makeAiMessage(env, m);
+		}))).filter(m => m !== null);
 		const message = {
-			id: messageId,
+			id: uuidv7(),
 			roomId,
 			role: UserRole.USER,
 			text: content,
 			imageKey: imageKey || undefined,
 		};
-		messages.push(message);
+		history.push(await makeAiMessage(env, message));
 		const responseId = uuidv7();
-		const history = await Promise.all(messages.map(makeAiMessage.bind(null, env)));
 		const stream = await env.AI.run("@cf/google/gemma-3-12b-it", {
 			messages: history,
 			stream: true,
