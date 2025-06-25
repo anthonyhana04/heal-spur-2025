@@ -16,6 +16,7 @@
 		"wrangler": "^4.20.5"
 	},
 	"dependencies": {
+		"eventsource-parser": "^3.0.2",
 		"itty-router": "^5.0.18",
 		"uuidv7": "^1.0.2"
 	}

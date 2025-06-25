@@ -1,7 +1,8 @@
 import { AutoRouter, withCookies } from "itty-router";
-import { deleteSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
+import { deleteSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, Message, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
 import { Env } from "./envTypes";
 import { uuidv7 } from "uuidv7";
+import { EventSourceParserStream } from "eventsource-parser/stream";
 
 /**
  * Welcome to Cloudflare Workers! This is your first worker.
@@ -94,13 +95,13 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
 		if (hashedPassword === passwordHash) {
 			const sessionId = uuidv7();
 			// Store the session ID in a cookie or database as needed
-			storeSession(env, {
+			const session = {
 				sessionId,
 				username,
-			}).catch((error) => {
-				console.error("Error storing session:", error);
-			});
-			return new Response(`Login successful, session ID: ${sessionId}`, {
+				ttl: 60 * 60, // 1 hour TTL
+			}
+			await storeSession(env, session);
+			return new Response(JSON.stringify(session), {
 				status: 200,
 				headers: {
 					"Set-Cookie": `sessionId=${sessionId}; HttpOnly; Secure; SameSite=Strict`,
@@ -582,32 +583,13 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			imageKey: imageKey || undefined,
 		};
 		messages.push(message);
-		const history = await Promise.all(messages.map(async m => {
-			if (m.imageKey) {
-				const imageb64 = await loadImageBase64(env, m.imageKey);
-				if (!imageb64) {
-					throw new Error("Image not found");
-				}
-				const { data, mimeType } = imageb64;
-				const uri = `data:${mimeType};base64,${data}`;
-				return {
-					role: m.role,
-					content: {
-						type: "image",
-						uri: uri,
-					}
-				};
-			}
-			return {
-				role: m.role,
-				content: m.text,
-			};
-		}));
+		const responseId = uuidv7();
+		const history = await Promise.all(messages.map(makeAiMessage.bind(null, env)));
 		const stream = await env.AI.run("@cf/google/gemma-3-12b-it", {
 			messages: history,
 			stream: true,
+			max_tokens: 32768,
 		});
-		await storeMessage(env, message);
 
 		// Create a TransformStream to collect the streamed content
 		const { readable, writable } = new TransformStream();
@@ -615,24 +597,34 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 		let fullText = '';
 
 		// Process the stream
+		const jsonStream = stream.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream());
 		(async () => {
 			try {
-				for await (const chunk of stream) {
-					fullText += chunk; // Collect the full text
-					await writer.write(chunk); // Stream to the client
+				for await (const chunk of jsonStream) {
+					console.log("Stream data:", chunk.data);
+					if (chunk.data === "[DONE]") {
+						break; // End of stream
+					}
+					const { response } = JSON.parse(chunk.data);
+					if (!response) {
+						continue; // Skip if no response
+					}
+					fullText += response; // Collect the full text
+					// convert string to Uint8Array
+					const responseBytes = new TextEncoder().encode(`data: ${response}\n\n`);
+					await writer.write(responseBytes); // Stream to the client
 				}
-			} catch (error) {
-				console.error('Error processing stream:', error);
-			} finally {
 				// Store the complete assistant message after stream ends
 				const outputMessage = {
-					id: uuidv7(),
+					id: responseId,
 					roomId,
 					role: UserRole.ASSISTANT,
 					text: fullText,
 					imageKey: undefined,
 				};
+				await storeMessage(env, message);
 				await storeMessage(env, outputMessage);
+			} finally {
 				await writer.close();
 			}
 		})().catch(error => {
@@ -656,6 +648,28 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			}
 		});
 	}
+}
+
+async function makeAiMessage(env: Env, m: Message): Promise<{ role: UserRole; content: string | { type: string; uri: string, text: string } }> {
+	if (m.imageKey) {
+		const imageb64 = await loadImageBase64(env, m.imageKey);
+		if (!imageb64) {
+			throw new Error("Image not found");
+		}
+		const { data, mimeType } = imageb64;
+		return {
+			role: m.role,
+			content: {
+				type: "image",
+				uri: `data:${mimeType};base64,${data}`,
+				text: m.text,
+			},
+		};
+	}
+	return {
+		role: m.role,
+		content: m.text,
+	};
 }
 
 function getSessionId(req: Request): string | null {

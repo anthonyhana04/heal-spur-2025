@@ -15,6 +15,7 @@ export interface Room {
 export interface UserSession {
 	username: string;
 	sessionId: string;
+	ttl?: number; // Time to live in seconds
 }
 
 export enum UserRole {
@@ -114,7 +115,7 @@ export async function loadRooms(env: Env, owner: string): Promise<Room[]> {
 
 export async function storeSession(env: Env, session: UserSession): Promise<void> {
 	await env.kv_store.put(session.sessionId, JSON.stringify({ username: session.username }), {
-		expirationTtl: 3600 // Session expires in 1 hour
+		expirationTtl: session.ttl!
 	});
 }
 
@@ -132,7 +133,11 @@ export async function deleteSession(env: Env, sessionId: string): Promise<void> 
 export async function extendSession(env: Env, sessionId: string): Promise<void> {
 	const session = await loadSession(env, sessionId);
 	if (session) {
-		await storeSession(env, session); // Re-store to extend TTL
+		await storeSession(env, {
+			username: session.username,
+			sessionId: session.sessionId,
+			ttl: 36000 // Extend TTL to 1 hour (3600 seconds)
+		}); // Re-store to extend TTL
 	}
 }
 
@@ -195,11 +200,11 @@ export async function loadMessagesIdByRoom(env: Env, roomId: string, cursor: str
 		params.push(cursor);
 	}
 	const results = await env.DB.prepare(query).bind(...params).all();
-	const messageIds = results.results.map((row: any) => row.id);
+	const messageIds = results.results.map((row: any) => row.id).reverse(); // Reverse to get oldest first
 
 	let nextCursor: string | null = null;
 	if (messageIds.length === limit) {
-		nextCursor = messageIds[messageIds.length - 1]; // Set cursor to the last message ID
+		nextCursor = messageIds[0]; // Set next cursor to the last message ID if we reached the limit
 	}
 
 	return { messageIds, cursor: nextCursor };
