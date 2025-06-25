@@ -1,4 +1,4 @@
-import { AutoRouter } from "itty-router";
+import { AutoRouter, withCookies } from "itty-router";
 import { deleteSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
 import { Env } from "./envTypes";
 import { uuidv7 } from "uuidv7";
@@ -559,7 +559,9 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 				},
 			});
 		}
-		const { roomId, content, imageKey } = await req.json<{ roomId: string; content: string, imageKey: string | undefined }>();
+		const body = await req.json<{ roomId: string; content: string, imageKey: string | null | undefined }>();
+		console.log("Body:", body);
+		const { roomId, content, imageKey } = body;
 		if (!roomId || !content) {
 			return new Response("Room ID and content are required", {
 				status: 400,
@@ -606,38 +608,38 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			stream: true,
 		});
 		await storeMessage(env, message);
-		// store output message
-		const outputMessage = {
-			id: uuidv7(),
-			roomId,
-			role: UserRole.ASSISTANT,
-			text: "",
-			imageKey: undefined,
-		};
-		const reader = stream.getReader();
+
+		// Create a TransformStream to collect the streamed content
 		const { readable, writable } = new TransformStream();
-		async function processStream() {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) {
-					writable.getWriter().close();
-					// Store the final output message
-					if (outputMessage.text) {
-						await storeMessage(env, outputMessage);
-					}
-					break;
+		const writer = writable.getWriter();
+		let fullText = '';
+
+		// Process the stream
+		(async () => {
+			try {
+				for await (const chunk of stream) {
+					fullText += chunk; // Collect the full text
+					await writer.write(chunk); // Stream to the client
 				}
-				if (value.type === "text") {
-					outputMessage.text += value.text;
-				}
-				writable.getWriter().write(value);
+			} catch (error) {
+				console.error('Error processing stream:', error);
+			} finally {
+				// Store the complete assistant message after stream ends
+				const outputMessage = {
+					id: uuidv7(),
+					roomId,
+					role: UserRole.ASSISTANT,
+					text: fullText,
+					imageKey: undefined,
+				};
+				await storeMessage(env, outputMessage);
+				await writer.close();
 			}
-		}
-		processStream().catch(error => {
+		})().catch(error => {
 			console.error("Error processing stream:", error);
-			writable.getWriter().abort(error);
 		});
-		// Create a response stream
+
+		// Return the readable stream to the client
 		return new Response(readable, {
 			headers: {
 				"Content-Type": "text/event-stream",
