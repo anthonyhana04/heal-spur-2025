@@ -1,5 +1,5 @@
-import { AutoRouter, withCookies } from "itty-router";
-import { deleteSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, Message, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
+import { AutoRouter } from "itty-router";
+import { deleteSession, extendSession, loadImageBase64, loadMessage, loadMessagesIdByRoom, loadRoom, loadRooms, loadSession, loadUser, Message, storeImage, storeImageBase64, storeMessage, storeRoom, storeSession, storeUser, UserRole } from "./storage";
 import { Env } from "./envTypes";
 import { uuidv7 } from "uuidv7";
 import { EventSourceParserStream } from "eventsource-parser/stream";
@@ -650,6 +650,46 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 	}
 }
 
+const extendCors = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Credentials": "true",
+};
+
+async function extendUserSession(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = extendCors;
+	const sessionId = getSessionId(req);
+	if (!sessionId) {
+		return new Response("Not logged in", {
+			status: 401,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			},
+		});
+	}
+	try {
+		const session = await extendSession(env, sessionId);
+		return new Response(JSON.stringify(session), {
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				"Set-Cookie": `sessionId=${session.sessionId}; HttpOnly; Secure; SameSite=Strict`,
+				...corsHeaders,
+			},
+		});
+	} catch (error) {
+		console.error("Error extending session:", error);
+		return new Response("Internal Server Error", {
+			status: 500,
+			headers: {
+				"Content-Type": "text/plain",
+				...corsHeaders,
+			}
+		});
+	}
+}
+
 async function makeAiMessage(env: Env, m: Message): Promise<{ role: UserRole; content: string | { type: string; uri: string, text: string } }> {
 	if (m.imageKey) {
 		const imageb64 = await loadImageBase64(env, m.imageKey);
@@ -723,6 +763,11 @@ router
 		headers: messageCors,
 	}))
 	.get("/api/message", handleGetMessage)
-	.post("/api/message", handleCreateMessage);
+	.post("/api/message", handleCreateMessage)
+	.options("/api/extend", () => new Response(null, {
+		status: 204,
+		headers: extendCors,
+	}))
+	.post("/api/extend", extendUserSession);
 
 export default router satisfies ExportedHandler<Env>;

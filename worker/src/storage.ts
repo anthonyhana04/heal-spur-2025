@@ -130,14 +130,19 @@ export async function deleteSession(env: Env, sessionId: string): Promise<void> 
 	await env.kv_store.delete(sessionId);
 }
 
-export async function extendSession(env: Env, sessionId: string): Promise<void> {
+export async function extendSession(env: Env, sessionId: string): Promise<UserSession> {
 	const session = await loadSession(env, sessionId);
 	if (session) {
-		await storeSession(env, {
+		const nextSession = {
 			username: session.username,
 			sessionId: session.sessionId,
-			ttl: 36000 // Extend TTL to 1 hour (3600 seconds)
-		}); // Re-store to extend TTL
+			ttl: 3600 // Extend TTL to 1 hour (3600 seconds)
+		};
+		await storeSession(env, nextSession); // Re-store to extend TTL
+		return nextSession;
+	}
+	else {
+		throw new Error('Session not found');
 	}
 }
 
