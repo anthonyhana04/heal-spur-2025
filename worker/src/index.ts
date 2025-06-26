@@ -65,18 +65,19 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
 	});
 }
 
-const loginCors = {
+const sessionCors = {
 	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, OPTIONS",
+	"Access-Control-Allow-Methods": "POST, PUT, DELETE, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
+	"Access-Control-Allow-Credentials": "true",
 };
 
-async function handleLogin(req: Request, env: Env): Promise<Response> {
+async function handleCreateSession(req: Request, env: Env): Promise<Response> {
 	const { username, password } = await req.json<{
 		username: string;
 		password: string;
 	}>();
-	const corsHeaders = loginCors;
+	const corsHeaders = sessionCors;
 	try {
 		const user = await loadUser(env, username);
 		if (!user) {
@@ -123,15 +124,9 @@ async function handleLogin(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const logoutCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-};
-
-async function handleLogout(req: Request, env: Env): Promise<Response> {
+async function handleDeleteSession(req: Request, env: Env): Promise<Response> {
 	const sessionId = getSessionId(req);
-	const corsHeaders = logoutCors;
+	const corsHeaders = sessionCors;
 	if (!sessionId) {
 		return new Response("Not logged in", {
 			status: 401,
@@ -603,6 +598,8 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 		const jsonStream = stream.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream());
 		(async () => {
 			try {
+				// write event type
+				await writer.write(new TextEncoder().encode(`event: ${responseId}\n`));
 				for await (const chunk of jsonStream) {
 					console.log("Stream data:", chunk.data);
 					if (chunk.data === "[DONE]") {
@@ -653,14 +650,8 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const extendCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, OPTIONS",
-	"Access-Control-Allow-Credentials": "true",
-};
-
-async function extendUserSession(req: Request, env: Env): Promise<Response> {
-	const corsHeaders = extendCors;
+async function handlePutSession(req: Request, env: Env): Promise<Response> {
+	const corsHeaders = sessionCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
 		return new Response("Not logged in", {
@@ -730,16 +721,13 @@ router
 		headers: registerCors,
 	}))
 	.post("/api/register", handleRegister)
-	.options("/api/login", () => new Response(null, {
+	.options("/api/session", () => new Response(null, {
 		status: 204,
-		headers: loginCors,
+		headers: sessionCors,
 	}))
-	.post("/api/login", handleLogin)
-	.options("/api/logout", () => new Response(null, {
-		status: 204,
-		headers: logoutCors,
-	}))
-	.post("/api/logout", handleLogout)
+	.post("/api/session", handleCreateSession)
+	.delete("/api/session", handleDeleteSession)
+	.put("/api/session", handlePutSession)
 	.options("/api/room", () => new Response(null, {
 		status: 204,
 		headers: roomCors,
@@ -766,11 +754,6 @@ router
 		headers: messageCors,
 	}))
 	.get("/api/message", handleGetMessage)
-	.post("/api/message", handleCreateMessage)
-	.options("/api/extend", () => new Response(null, {
-		status: 204,
-		headers: extendCors,
-	}))
-	.post("/api/extend", extendUserSession);
+	.post("/api/message", handleCreateMessage);
 
 export default router satisfies ExportedHandler<Env>;

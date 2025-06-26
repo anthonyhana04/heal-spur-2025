@@ -1,68 +1,189 @@
 openapi: 3.0.3
 info:
   title: Cloudflare Worker Chat API
+  description: API for a chat application with user authentication, room management, messaging, and image upload capabilities.
   version: 1.0.0
-  description: API for user registration, authentication, room management, and messaging with image support
 servers:
-  - url: http://localhost:8787
-    description: Local development server
+  - url: https://{worker-name}.{subdomain}.workers.dev
+    variables:
+      worker-name:
+        default: chat-api
+      subdomain:
+        default: example
 paths:
   /api/register:
+    options:
+      summary: CORS preflight for user registration
+      operationId: registerOptions
+      responses:
+        '204':
+          description: No content
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
     post:
       summary: Register a new user
+      operationId: registerUser
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [username, password]
+              required:
+                - username
+                - password
               properties:
-                username: { type: string, example: testuser }
-                password: { type: string, example: password123 }
+                username:
+                  type: string
+                  example: john_doe
+                password:
+                  type: string
+                  format: password
+                  example: securepassword123
       responses:
         '201':
           description: User registered successfully
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
           content:
             text/plain:
               schema:
                 type: string
-                example: User testuser registered successfully
+                example: User john_doe registered successfully
         '500':
           description: Internal server error
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
           content:
             text/plain:
               schema:
                 type: string
                 example: Internal Server Error
-  /api/login:
+  /api/session:
+    options:
+      summary: CORS preflight for session management
+      operationId: sessionOptions
+      responses:
+        '204':
+          description: No content
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
     post:
-      summary: Log in a user
+      summary: Create a new session (login)
+      operationId: createSession
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [username, password]
+              required:
+                - username
+                - password
               properties:
-                username: { type: string, example: testuser }
-                password: { type: string, example: password123 }
+                username:
+                  type: string
+                  example: john_doe
+                password:
+                  type: string
+                  format: password
+                  example: securepassword123
       responses:
         '200':
-          description: Login successful
+          description: Session created successfully
           headers:
             Set-Cookie:
               schema:
                 type: string
-                example: sessionId=mock-session-id; HttpOnly; Secure; SameSite=Strict
+                example: sessionId=uuid; HttpOnly; Secure; SameSite=Strict
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
                 type: string
-                example: 'Login successful, session ID: mock-session-id'
+                example: '{"sessionId":"uuid","username":"john_doe","ttl":3600}'
         '401':
           description: Invalid credentials
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -70,6 +191,23 @@ paths:
                 example: Invalid credentials
         '404':
           description: User not found
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -82,11 +220,16 @@ paths:
               schema:
                 type: string
                 example: Internal Server Error
-  /api/logout:
-    post:
-      summary: Log out a user
-      security:
-        - cookieAuth: []
+    delete:
+      summary: Delete a session (logout)
+      operationId: deleteSession
+      parameters:
+        - name: Cookie
+          in: header
+          required: true
+          schema:
+            type: string
+            example: sessionId=uuid
       responses:
         '200':
           description: Logout successful
@@ -95,6 +238,22 @@ paths:
               schema:
                 type: string
                 example: sessionId=; HttpOnly; Secure; SameSite=Strict; Max-Age=0
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -102,6 +261,23 @@ paths:
                 example: Logout successful
         '401':
           description: Not logged in
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -109,88 +285,223 @@ paths:
                 example: Not logged in
         '500':
           description: Internal server error
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Internal Server Error
+    put:
+      summary: Extend an existing session
+      operationId: extendSession
+      parameters:
+        - name: Cookie
+          in: header
+          required: true
+          schema:
+            type: string
+            example: sessionId=uuid
+      responses:
+        '200':
+          description: Session extended successfully
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: sessionId=uuid; HttpOnly; Secure; SameSite=Strict
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    example: uuid
+                  username:
+                    type: string
+                    example: john_doe
+                  ttl:
+                    type: integer
+                    example: 3600
+        '401':
+          description: Not logged in
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Not logged in
+        '500':
+          description: Internal server error
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'POST, PUT, DELETE, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
                 type: string
                 example: Internal Server Error
   /api/room:
-    get:
-      summary: Get a specific room
-      security:
-        - cookieAuth: []
+    options:
+      summary: CORS preflight for room operations
+      operationId: roomOptions
+      responses:
+        '204':
+          description: No content
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'GET, POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
+    post:
+      summary: Create a new room
+      operationId: createRoom
       parameters:
-        - name: roomId
-          in: query
+        - name: Cookie
+          in: header
           required: true
           schema:
             type: string
-            example: mock-uuid
-      responses:
-        '200':
-          description: Room retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  roomId: { type: string, example: mock-uuid }
-                  name: { type: string, example: Test Room }
-                  owner: { type: string, example: testuser }
-        '400':
-          description: Room ID is required
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Room ID is required
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Not logged in
-        '404':
-          description: Session or room not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Room not found
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-    post:
-      summary: Create a new room
-      security:
-        - cookieAuth: []
+            example: sessionId=uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name]
+              required:
+                - name
               properties:
-                name: { type: string, example: Test Room }
+                name:
+                  type: string
+                  example: General Chat
       responses:
         '201':
           description: Room created successfully
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'GET, POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  roomId: { type: string, example: mock-uuid }
-                  name: { type: string, example: Test Room }
-                  owner: { type: string, example: testuser }
+                  roomId:
+                    type: string
+                    example: uuid
+                  name:
+                    type: string
+                    example: General Chat
+                  owner:
+                    type: string
+                    example: john_doe
         '401':
           description: Not logged in
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'GET, POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -198,6 +509,23 @@ paths:
                 example: Not logged in
         '404':
           description: Session not found
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: '*'
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: 'GET, POST, OPTIONS'
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: 'Content-Type'
+            Access-Control-Allow-Credentials:
+              schema:
+                type: string
+                example: 'true'
           content:
             text/plain:
               schema:
@@ -205,254 +533,11 @@ paths:
                 example: Session not found
         '500':
           description: Internal server error
-          content:
-            text/plain:
+          headers:
+            Access-Control-Allow-Origin:
               schema:
                 type: string
-                example: Internal Server Error
-  /api/rooms:
-    get:
-      summary: Get all rooms for the user
-      security:
-        - cookieAuth: []
-      responses:
-        '200':
-          description: Rooms retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    roomId: { type: string, example: mock-uuid }
-                    name: { type: string, example: Test Room }
-                    owner: { type: string, example: testuser }
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
+                example: '*'
+            Access-Control-Allow-Methods:
               schema:
                 type: string
-                example: Not logged in
-        '404':
-          description: Session not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Session not found
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-  /api/image:
-    post:
-      summary: Upload an image
-      security:
-        - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          image/*:
-            schema:
-              type: string
-              format: binary
-      responses:
-        '201':
-          description: Image uploaded successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  key: { type: string, example: images/mock-uuid }
-        '400':
-          description: Invalid image format or no data
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Invalid image format
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Not logged in
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-  /api/messages:
-    get:
-      summary: Get messages for a room
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: roomId
-          in: query
-          required: true
-          schema:
-            type: string
-            example: mock-uuid
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-            example: cursor123
-      responses:
-        '200':
-          description: Messages retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  messageIds: { type: array, items: { type: string } }
-                  nextCursor: { type: string, nullable: true }
-        '400':
-          description: Room ID is required
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Room ID is required
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Not logged in
-        '404':
-          description: Session not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Session not found
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-  /api/message:
-    get:
-      summary: Get a specific message
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: messageId
-          in: query
-          required: true
-          schema:
-            type: string
-            example: mock-message-id
-      responses:
-        '200':
-          description: Message retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: string, example: mock-message-id }
-                  roomId: { type: string, example: mock-uuid }
-                  role: { type: string, enum: [USER, ASSISTANT] }
-                  text: { type: string, example: Hello! }
-                  imageKey: { type: string, nullable: true }
-        '400':
-          description: Message ID is required
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Message ID is required
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Not logged in
-        '404':
-          description: Session or message not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Message not found
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-    post:
-      summary: Create a new message
-      security:
-        - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [roomId, content]
-              properties:
-                roomId: { type: string, example: mock-uuid }
-                content: { type: string, example: Hello! }
-                imageKey: { type: string, nullable: true, example: images/mock-uuid }
-      responses:
-        '200':
-          description: Message created, returns AI response stream
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        '400':
-          description: Room ID and content are required
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Room ID and content are required
-        '401':
-          description: Not logged in
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Not logged in
-        '404':
-          description: Session not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Session not found
-        '500':
-          description: Internal server error
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: Internal Server Error
-components:
-  securitySchemes:
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: sessionId
