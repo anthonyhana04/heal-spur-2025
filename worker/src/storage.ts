@@ -1,5 +1,3 @@
-import type { Env } from './envTypes';
-
 export interface User {
 	username: string;
 	salt: string;
