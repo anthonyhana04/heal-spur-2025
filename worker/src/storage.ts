@@ -149,8 +149,8 @@ export async function storeMessage(env: Env, message: Message): Promise<void> {
 	await env.DB.prepare(`
 		INSERT INTO messages (id, roomId, role, text, imageKey) VALUES (?, ?, ?, ?, ?)
 	`).bind(message.id, message.roomId, message.role, message.text, message.imageKey || null).run();
-	const key = `${message.roomId}:${message.id}`;
-	await env.kv_store.put(key, JSON.stringify(message), {
+	// Store a copy in KV for quick retrieval using the message ID
+	await env.kv_store.put(message.id, JSON.stringify(message), {
 		expirationTtl: 604800 // Message expires in 7 days
 	});
 }
@@ -191,22 +191,24 @@ export async function loadMessage(env: Env, messageId: string): Promise<Message 
 }
 
 export async function loadMessagesIdByRoom(env: Env, roomId: string, cursor: string | null, limit = 16): Promise<{ messageIds: string[], cursor: string | null }> {
-	let query = `
-		SELECT id FROM messages WHERE roomId = ? ORDER BY id DESC LIMIT ?
-	`;
+	// Build query so that optional cursor condition appears BEFORE ORDER BY / LIMIT
+	let query = `SELECT id FROM messages WHERE roomId = ?`;
+	const params: any[] = [roomId];
+
 	if (cursor) {
 		query += ` AND id < ?`;
-	}
-	const params: any[] = [roomId, limit];
-	if (cursor) {
 		params.push(cursor);
 	}
+
+	query += ` ORDER BY id DESC LIMIT ?`;
+	params.push(limit);
+
 	const results = await env.DB.prepare(query).bind(...params).all();
 	const messageIds = results.results.map((row: any) => row.id).reverse(); // Reverse to get oldest first
 
 	let nextCursor: string | null = null;
 	if (messageIds.length === limit) {
-		nextCursor = messageIds[0]; // Set next cursor to the last message ID if we reached the limit
+		nextCursor = messageIds[0]; // set next cursor to the last message ID if we reached the limit
 	}
 
 	return { messageIds, cursor: nextCursor };
@@ -215,7 +217,7 @@ export async function loadMessagesIdByRoom(env: Env, roomId: string, cursor: str
 export async function storeImage(env: Env, image: ImageRaw): Promise<void> {
 	await env.images.put(image.key, image.data, {
 		httpMetadata: {
-			contentType: image.mimeType, // Adjust based on actual image type
+			contentType: image.mimeType, // adjust based on actual image type
 		},
 	});
 }
@@ -223,18 +225,23 @@ export async function storeImage(env: Env, image: ImageRaw): Promise<void> {
 export async function storeImageBase64(env: Env, image: ImageBase64): Promise<void> {
 	await env.images.put(image.key, image.data, {
 		httpMetadata: {
-			contentType: image.mimeType, // Adjust based on actual image type
+			// treat the stored value as plain text
+			contentType: "text/plain; charset=utf-8",
+		},
+		customMetadata: {
+			mimeType: image.mimeType,
 		},
 	});
 }
 
-export async function loadImageBase64(env: Env, key: string): Promise<ImageRaw | null> {
+export async function loadImageBase64(env: Env, key: string): Promise<ImageBase64 | null> {
 	const object = await env.images.get(key);
 	if (!object) return null;
-	const data = await object.arrayBuffer();
+	// base-64 representation was stored as plain text
+	const data = await object.text();
 	return {
 		key,
 		data,
-		mimeType: object.httpMetadata?.contentType || 'application/octet-stream',
+		mimeType: object.customMetadata?.mimeType || object.httpMetadata?.contentType || "application/octet-stream",
 	};
 }
