@@ -3,23 +3,16 @@ import { deleteSession, extendSession, loadImageBase64, loadMessage, loadMessage
 import { uuidv7 } from "uuidv7";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-const registerCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-};
+function cors(methods: string, withCredentials = true): Record<string, string> {
+	return {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": methods,
+		"Access-Control-Allow-Headers": "Content-Type",
+		...(withCredentials ? { "Access-Control-Allow-Credentials": "true" } : {}),
+	};
+}
+
+const registerCors = cors("POST, OPTIONS", /*withCredentials*/ false);
 
 async function hashPassword(password: string, salt: Uint8Array): Promise<string> {
 	const encoder = new TextEncoder();
@@ -65,12 +58,7 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
 	});
 }
 
-const sessionCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, PUT, DELETE, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const sessionCors = cors("POST, PUT, DELETE, OPTIONS");
 
 async function handleCreateSession(req: Request, env: Env): Promise<Response> {
 	const { username, password } = await req.json<{
@@ -158,12 +146,7 @@ async function handleDeleteSession(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const roomCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const roomCors = cors("GET, POST, OPTIONS");
 
 async function handleCreateRoom(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = roomCors;
@@ -216,12 +199,7 @@ async function handleCreateRoom(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const getRoomsCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "GET, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const getRoomsCors = cors("GET, OPTIONS");
 async function handleGetRooms(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = getRoomsCors;
 	try {
@@ -327,60 +305,70 @@ async function handleGetRoom(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const uploadImageCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const uploadImageCors = cors("POST, OPTIONS");
+
+// Converts an ArrayBuffer to a base-64 string without exceeding call-stack limits
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+	const bytes = new Uint8Array(buffer);
+	let binary = "";
+	const chunkSize = 0x8000; // 32 768 bytes per chunk – safe for fromCharCode
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+	}
+	return btoa(binary);
+}
 
 async function handleUploadImage(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = uploadImageCors;
 	const sessionId = getSessionId(req);
 	if (!sessionId) {
-		return Promise.resolve(new Response("Not logged in", {
+		return new Response("Not logged in", {
 			status: 401,
 			headers: {
 				"Content-Type": "text/plain",
 				...corsHeaders,
 			}
-		}));
+		});
 	}
 	const mimeType = req.headers.get("Content-Type");
 	if (!mimeType || !mimeType.startsWith("image/")) {
-		return Promise.resolve(new Response("Invalid image format", {
+		return new Response("Invalid image format", {
 			status: 400,
 			headers: {
 				"Content-Type": "text/plain",
 				...corsHeaders,
 			}
-		}));
+		});
 	}
 	try {
 		const key = `images/${crypto.randomUUID()}`;
 		const imgageData = await req.arrayBuffer();
 		if (!imgageData) {
-			return Promise.resolve(new Response("No image data provided", {
+			return new Response("No image data provided", {
 				status: 400,
 				headers: {
 					"Content-Type": "text/plain",
 					...corsHeaders,
 				}
-			}));
+			});
 		}
-		const storeImagePromise = storeImage(env, {
-			key,
+
+		// Store raw image (binary) under a distinct key so it does not clash
+		const rawKey = `${key}/raw`;
+		await storeImage(env, {
+			key: rawKey,
 			data: imgageData,
 			mimeType,
 		});
-		const imageDataBase64 = btoa(String.fromCharCode(...new Uint8Array(imgageData)));
-		const storeImageBase64Promise = storeImageBase64(env, {
+
+		// Convert to base-64 and store under the main key that the chat uses
+		const imageDataBase64 = arrayBufferToBase64(imgageData);
+		await storeImageBase64(env, {
 			key,
 			data: imageDataBase64,
 			mimeType,
 		});
-		await storeImagePromise;
-		await storeImageBase64Promise;
+
 		return new Response(JSON.stringify({ key }), {
 			status: 201,
 			headers: {
@@ -391,22 +379,17 @@ async function handleUploadImage(req: Request, env: Env): Promise<Response> {
 	}
 	catch (error) {
 		console.error("Error uploading image:", error);
-		return Promise.resolve(new Response("Internal Server Error", {
+		return new Response("Internal Server Error", {
 			status: 500,
 			headers: {
 				"Content-Type": "text/plain",
 				...corsHeaders,
 			}
-		}));
+		});
 	}
 }
 
-const getMessagesCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "GET, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const getMessagesCors = cors("GET, OPTIONS");
 
 async function handleGetMessages(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = getMessagesCors;
@@ -462,12 +445,7 @@ async function handleGetMessages(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-const messageCors = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-	"Access-Control-Allow-Headers": "Content-Type",
-	"Access-Control-Allow-Credentials": "true",
-};
+const messageCors = cors("GET, POST, OPTIONS");
 
 async function handleGetMessage(req: Request, env: Env): Promise<Response> {
 	const corsHeaders = messageCors;
@@ -555,7 +533,6 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			});
 		}
 		const body = await req.json<{ roomId: string; content: string, imageKey: string | null | undefined }>();
-		console.log("Body:", body);
 		const { roomId, content, imageKey } = body;
 		if (!roomId || !content) {
 			return new Response("Room ID and content are required", {
@@ -572,7 +549,7 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 			if (!m) {
 				return null; // Skip if message not found
 			}
-			return await makeAiMessage(env, m);
+			return await makeAiMessage(env, m, true);
 		}))).filter(m => m !== null);
 		const message = {
 			id: uuidv7(),
@@ -586,7 +563,7 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 		const stream = await env.AI.run("@cf/google/gemma-3-12b-it", {
 			messages: history,
 			stream: true,
-			max_tokens: 32768,
+			max_tokens: 40000,
 		});
 
 		// Create a TransformStream to collect the streamed content
@@ -601,7 +578,6 @@ async function handleCreateMessage(req: Request, env: Env): Promise<Response> {
 				// write event type
 				await writer.write(new TextEncoder().encode(`event: ${responseId}\n`));
 				for await (const chunk of jsonStream) {
-					console.log("Stream data:", chunk.data);
 					if (chunk.data === "[DONE]") {
 						break; // End of stream
 					}
@@ -684,8 +660,8 @@ async function handlePutSession(req: Request, env: Env): Promise<Response> {
 	}
 }
 
-async function makeAiMessage(env: Env, m: Message): Promise<{ role: UserRole; content: string | { type: string; uri: string, text: string } }> {
-	if (m.imageKey) {
+async function makeAiMessage(env: Env, m: Message, noImage = false): Promise<{ role: UserRole; content: string | { type: string, image_url: { url: string }, text: string }[] }> {
+	if (m.imageKey && !noImage) {
 		const imageb64 = await loadImageBase64(env, m.imageKey);
 		if (!imageb64) {
 			throw new Error("Image not found");
@@ -693,11 +669,13 @@ async function makeAiMessage(env: Env, m: Message): Promise<{ role: UserRole; co
 		const { data, mimeType } = imageb64;
 		return {
 			role: m.role,
-			content: {
-				type: "image",
-				uri: `data:${mimeType};base64,${data}`,
-				text: m.text,
-			},
+			content: [
+				{
+					type: "image_url",
+					image_url: { url: `data:${mimeType};base64,${data}` },
+					text: m.text
+				}
+			]
 		};
 	}
 	return {
@@ -707,10 +685,8 @@ async function makeAiMessage(env: Env, m: Message): Promise<{ role: UserRole; co
 }
 
 function getSessionId(req: Request): string | null {
-	console.log("Request Headers:", req.headers);
 	const authHeader = req.headers.get("Cookie") || "";
 	const match = authHeader.match(/sessionId=([^;]+)/);
-	console.log("Auth Header:", authHeader);
 	return match ? match[1] : null;
 }
 
