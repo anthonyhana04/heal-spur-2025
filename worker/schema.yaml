@@ -1,0 +1,349 @@
+openapi: 3.0.0
+info:
+  title: Chat API
+  version: 1.0.0
+  description: API for chat application with AI integration
+
+servers:
+  - url: http://localhost:8787
+    description: Local Development Server
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    Session:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        username:
+          type: string
+        ttl:
+          type: integer
+          description: Time to live in seconds
+      required:
+        - sessionId
+        - username
+        - ttl
+
+    Room:
+      type: object
+      properties:
+        roomId:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+      required:
+        - roomId
+        - name
+        - owner
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        role:
+          type: string
+          enum: [USER, ASSISTANT]
+        text:
+          type: string
+        imageKey:
+          type: string
+          nullable: true
+      required:
+        - id
+        - roomId
+        - role
+        - text
+
+    MessageList:
+      type: object
+      properties:
+        messageIds:
+          type: array
+          items:
+            type: string
+        cursor:
+          type: string
+          nullable: true
+      required:
+        - messageIds
+
+    ImageUpload:
+      type: object
+      properties:
+        key:
+          type: string
+      required:
+        - key
+
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionId
+
+paths:
+  /api/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '201':
+          description: User registered successfully
+        '500':
+          description: Internal server error
+
+  /api/session:
+    post:
+      summary: Create a new session (login)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Invalid credentials
+        '404':
+          description: User not found
+        '500':
+          description: Internal server error
+
+    put:
+      summary: Extend session
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Session extended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+    delete:
+      summary: Delete session (logout)
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Logout successful
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+  /api/room:
+    post:
+      summary: Create a new room
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+              required:
+                - name
+      responses:
+        '201':
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+    get:
+      summary: Get a specific room
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: roomId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Room details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+        '401':
+          description: Not logged in
+        '404':
+          description: Room not found
+        '500':
+          description: Internal server error
+
+  /api/rooms:
+    get:
+      summary: Get all rooms for the user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Room'
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+  /api/image:
+    post:
+      summary: Upload an image
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '201':
+          description: Image uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageUpload'
+        '400':
+          description: Invalid image format
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+  /api/messages:
+    get:
+      summary: Get messages for a room
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: roomId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of message IDs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageList'
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
+
+  /api/message:
+    get:
+      summary: Get a specific message
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: messageId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Message details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          description: Not logged in
+        '404':
+          description: Message not found
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Create a new message
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roomId:
+                  type: string
+                content:
+                  type: string
+                imageKey:
+                  type: string
+                  nullable: true
+              required:
+                - roomId
+                - content
+      responses:
+        '200':
+          description: Message created and AI response streamed
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          description: Not logged in
+        '500':
+          description: Internal server error
