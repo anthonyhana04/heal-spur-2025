@@ -13,7 +13,8 @@
 	"kv_namespaces": [
 		{
 			"binding": "kv_store",
-			"id": "9d3fabc97119402b98c47e07ec383527"
+			"id": "9d3fabc97119402b98c47e07ec383527",
+			"preview_id": "336fe34b0f95409e965399379820ae16"
 		}
 	],
 	"d1_databases": [
@@ -26,7 +27,9 @@
 	"r2_buckets": [
 		{
 			"bucket_name": "images",
-			"binding": "images"
+			"binding": "images",
+			"preview_bucket_name": "preview-images",
+			"experimental_remote": true
 		}
 	],
 	"ai": {
