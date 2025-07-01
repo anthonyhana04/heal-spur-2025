@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import Logo from './logo.png';
+import AiChat from './chat/AiChat.js';
 
 const ObjectInput = ({ onIdentify, hasImage }) => {
   const [text, setText] = useState('');
@@ -1036,9 +1037,8 @@ const Start = () => {
       <div className='w-full lg:w-96 lg:h-screen lg:flex-shrink-0 p-4'>
         <div className='h-full flex flex-col gap-4'>
           <div className='flex-1 min-h-[300px]'>
-            <ChatBox 
-              objectHistory={objectHistory}
-              onNewMessage={true}
+            <AiChat 
+              currentImage={screenshotImage || uploadedImage}
             />
           </div>
           <div className='flex-1 min-h-[300px]'>
