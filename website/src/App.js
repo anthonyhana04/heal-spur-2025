@@ -2,36 +2,31 @@ import React from 'react'
 import Lottie from 'lottie-react'
 import Camera from './camera.json'
 import Start from './start.js'
-import Login from './login.js'
+import Login from './auth/login.js'
 import Email from './email.js'
+import Register from './auth/register.js'
 import Logo from './logo.png'
 import ScrollDown from './scrollDown.json'
 import { useRef } from 'react'
 import { useNavigate} from 'react-router-dom';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Parallax, ParallaxLayer } from '@react-spring/parallax'
-import { useAuth0 } from '@auth0/auth0-react';
+import { useAuth } from './auth/AuthProvider';
 
 const AppContainer = () => {
   const navigate = useNavigate();
-  const { loginWithRedirect, logout, isAuthenticated, isLoading } = useAuth0();
+  const { user, loading, logout } = useAuth();
   
   function handleClick(){
     ref.current.scrollTo(0);
   }
 
-  const handleLogin = async () => {
-    try {
-      console.log('Attempting to login with Auth0...');
-      await loginWithRedirect();
-    } catch (err) {
-      console.error('Login error:', err);
-      alert('Login failed. Please check your Auth0 configuration.');
-    }
+  const handleLogin = () => {
+    navigate('/login');
   };
 
   const handleLogout = () => {
-    logout({ logoutParams: { returnTo: window.location.origin } });
+    logout();
   };
 
   const ref = useRef();
@@ -122,9 +117,9 @@ const AppContainer = () => {
       
       {/* Login/Logout Button */}
       <div className='absolute top-2 sm:top-4 right-2 sm:right-4 flex items-center gap-2 sm:gap-4 z-10 pr-2'>
-        {!isLoading && (
+        {!loading && (
           <>
-            {!isAuthenticated ? (
+            {!user ? (
               <button className='bg-blue-600 text-white px-3 sm:px-6 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105 text-sm sm:text-base' onClick={handleLogin}>
                 Login
               </button>
@@ -148,6 +143,7 @@ const App = () => {
         <Route path='/start' element={<Start />} />
         <Route path='/login' element={<Login/>}/>
         <Route path='/email' element={<Email/>}/>
+        <Route path='/register' element={<Register/>}/>
       </Routes>
     </BrowserRouter>
   )
