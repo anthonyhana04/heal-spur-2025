@@ -1,2 +1,3 @@
 name = "heal-spur-2025"
-routes = [{ pattern = "healens.co/worker/*", zone_name = "healens.co" }]
+main = "src/index.ts"
+routes = [{ pattern = "healens.co/api/*", zone_name = "healens.co" }]
