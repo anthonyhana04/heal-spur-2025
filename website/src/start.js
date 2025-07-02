@@ -79,12 +79,13 @@ const ObjectInput = ({ onIdentify, hasImage }) => {
     }
     
     // Validate text length
-    if (trimmedText.length > 100) {
-      setError('Object name is too long. Please keep it under 100 characters');
+    if (trimmedText.length > 50) {
+      setError('Object name is too long. Please keep it under 50 characters');
       return;
     }
     
     try {
+      
       onIdentify(trimmedText);
       setText('');
       setError('');
@@ -110,8 +111,8 @@ const ObjectInput = ({ onIdentify, hasImage }) => {
           // Clear error when user starts typing
           if (error) setError('');
           // Prevent extremely long input
-          if (newValue.length > 100) {
-            setError('Object name is too long. Please keep it under 100 characters');
+          if (newValue.length > 50) {
+            setError('Object name is too long. Please keep it under 50 characters');
           }
         }}
         onKeyDown={(e) => {
@@ -254,224 +255,58 @@ const ObjectHistory = ({ onHistoryClick, objectHistory, onClearAll }) => {
   );
 };
 
-const ChatBox = ({ objectHistory, onNewMessage }) => {
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef(null);
+// Helper: uploads a dataUrl/blob URL to the backend and returns an imageKey
+async function uploadImageToServer(dataUrl) {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const uploadResp = await fetch(`/api/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+      body: blob,
+      credentials: 'include',
+    });
+    if (!uploadResp.ok) throw new Error('Image upload failed');
+    const { key } = await uploadResp.json();
+    return key;
+  } catch (err) {
+    console.error('Failed to upload image:', err);
+    return null;
+  }
+}
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  // Handle external messages (from object identification)
-  useEffect(() => {
-    const handleExternalMessage = (message) => {
-      const userMessage = {
-        id: Date.now(),
-        text: message,
-        sender: 'user',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages(prev => [...prev, userMessage]);
-      setIsLoading(true);
-
-      // Generate AI response
-      setTimeout(() => {
-        const aiResponse = generateAIResponse(message, objectHistory);
-        const aiMessage = {
-          id: Date.now() + 1,
-          text: aiResponse,
-          sender: 'ai',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        
-        setMessages(prev => [...prev, aiMessage]);
-        setIsLoading(false);
-      }, 1000);
-    };
-
-    // Listen for external messages
-    const handleMessage = (event) => {
-      if (event.detail && event.detail.type === 'object-identified') {
-        handleExternalMessage(event.detail.message);
+// Helper: parse bounding box text response into objects
+function parseBoundingBoxes(text) {
+  const boxes = [];
+  const cleaned = text.replace(/\n/g, ' ').replace(/\r/g, ' ');
+  const regex = /\{([^}]+)\}/g;
+  let match;
+  while ((match = regex.exec(cleaned)) !== null) {
+    const objStr = match[1]; // inner part of {...}
+    const box = { color: 'lime' };
+    objStr.split(',').forEach((seg) => {
+      const [k, v] = seg.split(':').map((s) => s.trim());
+      if (!k || v === undefined) return;
+      if (k === 'label') {
+        box.label = v.replace(/['"]/g, '');
+      } else {
+        box[k] = parseFloat(v);
       }
-    };
-
-    window.addEventListener('object-identified', handleMessage);
-    return () => window.removeEventListener('object-identified', handleMessage);
-  }, [objectHistory]);
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    
-    if (!inputText.trim()) return;
-
-    const userMessage = {
-      id: Date.now(),
-      text: inputText,
-      sender: 'user',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setIsLoading(true);
-
-    // Simulate AI response based on object history
-    setTimeout(() => {
-      const aiResponse = generateAIResponse(inputText, objectHistory);
-      const aiMessage = {
-        id: Date.now() + 1,
-        text: aiResponse,
-        sender: 'ai',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      
-      setMessages(prev => [...prev, aiMessage]);
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  const generateAIResponse = (question, history) => {
-    const lowerQuestion = question.toLowerCase();
-    
-    // Handle object identification queries (only when they start with "identify")
-    if (lowerQuestion.startsWith('identify ')) {
-      const objectName = question.replace(/^identify\s+/i, '').trim();
-      if (objectName) {
-        return `I'm searching for "${objectName}" in your image. This will help you locate where this object appears in the captured screenshot or uploaded image. The bounding boxes will show you the exact location once the identification is complete.`;
-      }
+    });
+    // Basic validation
+    if (box.x !== undefined && box.y !== undefined && box.width && box.height) {
+      boxes.push(box);
     }
-    
-    // Handle general greetings
-    if (lowerQuestion.includes('hello') || lowerQuestion.includes('hi') || lowerQuestion.includes('hey')) {
-      return "Hello! I'm your AI assistant. I can help you with object identification, answer questions about the app, and provide guidance on how to use the features. What would you like to know?";
-    }
-    
-    // Handle questions about identified objects
-    if (lowerQuestion.includes('what') && lowerQuestion.includes('identified')) {
-      if (history.length === 0) {
-        return "No objects have been identified yet. Take a screenshot or upload an image first, then identify objects to see them here.";
-      }
-      const recentItems = history.slice(0, 3);
-      const itemList = recentItems.map(item => `"${item.object}" (${item.status})`).join(', ');
-      return `Recently identified objects: ${itemList}. You can click on any item in the history to view it on the camera.`;
-    }
-    
-    // Handle how-to questions
-    if (lowerQuestion.includes('how') && lowerQuestion.includes('work')) {
-      return "To use this app: 1) Take a screenshot with your camera or upload an image, 2) Enter the name of an object you want to identify, 3) Click 'Send' to search for it. The app will show you where the object is located in the image.";
-    }
-    
-    // Handle camera questions
-    if (lowerQuestion.includes('camera') || lowerQuestion.includes('webcam')) {
-      return "You can switch between camera mode and file upload mode using the buttons above the image area. In camera mode, you can take screenshots. In dropzone mode, you can drag and drop or click to upload images.";
-    }
-    
-    // Handle history questions
-    if (lowerQuestion.includes('history') || lowerQuestion.includes('previous')) {
-      if (history.length === 0) {
-        return "Your object history is empty. Start identifying objects to build up your search history.";
-      }
-      return `You have ${history.length} items in your history. Click on any item to view it on the camera. You can also clear all history using the 'Clear All' button.`;
-    }
-    
-    // Handle help requests
-    if (lowerQuestion.includes('help') || lowerQuestion.includes('support')) {
-      return "I'm here to help! You can ask me about: how the app works, what objects have been identified, how to use the camera, managing your history, or any other questions about the object identification feature.";
-    }
-    
-    // Handle general questions about the app
-    if (lowerQuestion.includes('app') || lowerQuestion.includes('this') || lowerQuestion.includes('feature')) {
-      return "This is an object identification app that helps you find objects in images. You can use your camera to take screenshots or upload images, then identify specific objects within them. The app will show you exactly where those objects are located.";
-    }
-    
-    // Default response for unrecognized messages
-    return "I'm not sure I understand. You can ask me about how the app works, what objects have been identified, how to use the camera, or request help with any features. What would you like to know?";
-  };
-
-  return (
-    <div className="w-full h-full bg-gray-900/80 rounded-lg p-4 flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white text-lg font-bold">AI Assistant</h3>
-        <div className="text-gray-400 text-xs">Ask me anything!</div>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto space-y-3 mb-4">
-        {messages.length === 0 ? (
-          <div className="text-center text-gray-400 text-sm py-8">
-            <div className="mb-2">🤖</div>
-            <p>Hello! I'm here to help with your object identification questions.</p>
-            <p className="text-xs mt-2">Try asking: "How does this work?" or "What objects have been identified?"</p>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <div 
-              key={message.id} 
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[80%] rounded-lg p-3 ${
-                message.sender === 'user' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-800 text-white'
-              }`}>
-                <p className="text-sm">{message.text}</p>
-                <p className="text-xs opacity-70 mt-1">{message.timestamp}</p>
-              </div>
-            </div>
-          ))
-        )}
-        
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-800 text-white rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                <span className="text-sm">Thinking...</span>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        <div ref={messagesEndRef} />
-      </div>
-      
-      <form onSubmit={handleSendMessage} className="flex gap-2">
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Ask a question..."
-          className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none"
-          disabled={isLoading}
-        />
-        <button
-          type="submit"
-          disabled={!inputText.trim() || isLoading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm transition-colors"
-        >
-          Send
-        </button>
-      </form>
-    </div>
-  );
-};
+  }
+  return boxes;
+}
 
 const Start = () => {
   const navigate = useNavigate();
   const [uploadedImage, setUploadedImage] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [turnOnCam, setTurnOnCam] = useState(false);
-  const [boundingBoxes] = useState([
-    { x: 150, y: 100, width: 300, height: 250, label: 'Object 1', color: 'lime' },
-    { x: 400, y: 200, width: 150, height: 150, label: 'Object 2', color: 'red' }
-  ]);
+  const [boundingBoxes, setBoundingBoxes] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
   const [showHistoryImage, setShowHistoryImage] = useState(false);
   const [screenshotImage, setScreenshotImage] = useState(null);
@@ -688,7 +523,7 @@ const Start = () => {
     }
   };
 
-  const handleIdentify = (objectName) => {
+  const handleIdentify = async (objectName) => {
     try {
       // Validate input
       if (!objectName || typeof objectName !== 'string') {
@@ -702,90 +537,71 @@ const Start = () => {
         return;
       }
       
-      // Check if either screenshot or uploaded image is available
+      // Clear previous boxes immediately so UI resets while searching
+      setBoundingBoxes([]);
+
+      // Determine the active image
       const currentImage = screenshotImage || uploadedImage;
       if (!currentImage) {
         console.error('No image available for identification');
         return;
       }
 
-      // Dispatch event to trigger chatbox response
-      const event = new CustomEvent('object-identified', {
-        detail: {
-          type: 'object-identified',
-          message: `${trimmedName}`
-        }
-      });
-      window.dispatchEvent(event);
+      // Upload image first to get imageKey
+      const imageKey = await uploadImageToServer(currentImage);
+      if (!imageKey) {
+        console.error('Unable to upload image for object detection');
+        return;
+      }
 
-      // Determine the source area
+      // Call backend detection endpoint
+      let detectedBoxes = [];
+      try {
+        const resp = await fetch('/api/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objectName: trimmedName, imageKey }),
+          credentials: 'include',
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const resultText = await resp.text();
+        console.log('AI detection raw response:', resultText);
+        detectedBoxes = parseBoundingBoxes(resultText);
+        if (detectedBoxes.length) {
+          setBoundingBoxes(detectedBoxes);
+        } else {
+          console.warn('No bounding boxes parsed from AI response. Raw text: ', resultText);
+        }
+      } catch (err) {
+        console.error('Detection API error:', err);
+      }
+
+      // Determine the source area (for history tracking)
       const sourceArea = screenshotImage ? 'webcam' : 'dropzone';
 
       // Get current timestamp
       const now = new Date();
       const timestamp = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       
-      // Convert blob URL to data URL if needed for persistence
-      const processImageForHistory = async (imageUrl) => {
-        if (imageUrl.startsWith('blob:')) {
-          try {
-            const response = await fetch(imageUrl);
-            const blob = await response.blob();
-            return new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.readAsDataURL(blob);
-            });
-          } catch (err) {
-            console.error('Error converting blob to data URL:', err);
-            return imageUrl; // Fallback to original URL
-          }
+      // Create a new history item
+      const newItem = {
+        id: Date.now(), // Use timestamp as unique ID
+        object: trimmedName,
+        timestamp: timestamp,
+        status: detectedBoxes.length ? 'identified' : 'searching',
+        image: currentImage,
+        boundingBoxes: detectedBoxes.length ? detectedBoxes : [...boundingBoxes],
+        sourceArea: sourceArea, // Track which area this came from
+        details: {
+          brand: 'Searching...',
+          price: 'Searching...',
+          location: 'Searching...',
+          confidence: '0%'
         }
-        return imageUrl; // Already a data URL or other format
       };
 
-      // Process the image and create history item
-      processImageForHistory(currentImage).then(processedImage => {
-        // Create a new history item
-        const newItem = {
-          id: Date.now(), // Use timestamp as unique ID
-          object: trimmedName,
-          timestamp: timestamp,
-          status: 'searching', // Start with searching status
-          image: processedImage,
-          boundingBoxes: [...boundingBoxes], // Create a copy to avoid reference issues
-          sourceArea: sourceArea, // Track which area this came from
-          details: {
-            brand: 'Searching...',
-            price: 'Searching...',
-            location: 'Searching...',
-            confidence: '0%'
-          }
-        };
-
-        // Add to history
-        setObjectHistory(prev => [newItem, ...prev]);
-
-        // Simulate identification process (you can replace this with actual API call)
-        setTimeout(() => {
-          setObjectHistory(prev => 
-            prev.map(item => 
-              item.id === newItem.id 
-                ? {
-                    ...item,
-                    status: 'identified',
-                    details: {
-                      brand: 'Sample Brand',
-                      price: '$19.99',
-                      location: 'Online Store',
-                      confidence: '85%'
-                    }
-                  }
-                : item
-            )
-          );
-        }, 2000);
-      });
+      // Add to history
+      setObjectHistory(prev => [newItem, ...prev]);
     } catch (err) {
       console.error('Error in handleIdentify:', err);
     }
@@ -894,19 +710,6 @@ const Start = () => {
                         color={box.color}
                       />
                     ))}
-                    {/* Retake Screenshot Button */}
-                    <button
-                      onClick={() => {
-                        setScreenshotImage(null);
-                        setTurnOnCam(true);
-                      }}
-                      className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
-                      title="Retake Screenshot"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
                   </>
                 ) : turnOnCam ? (
                   <>
@@ -927,17 +730,6 @@ const Start = () => {
                         color={box.color}
                       />
                     ))}
-                    {/* Screenshot Button */}
-                    <button
-                      onClick={captureScreenshot}
-                      className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
-                      title="Take Screenshot"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </button>
                   </>
                 ) : (
                   <button 
@@ -947,6 +739,33 @@ const Start = () => {
                     <div className="mb-4">
                       {turnOnCam ? 'Turn off Camera' : 'Press to turn on Camera'}
                     </div>
+                  </button>
+                )}
+
+                {/* --- Always-visible capture / retake button --- */}
+                {imageMode === 'webcam' && (
+                  <button
+                    onClick={() => {
+                      if (turnOnCam) {
+                        captureScreenshot();
+                      } else {
+                        setScreenshotImage(null);
+                        setTurnOnCam(true);
+                      }
+                    }}
+                    className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
+                    title={turnOnCam ? 'Take Screenshot' : 'New Image'}
+                  >
+                    {turnOnCam ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
                   </button>
                 )}
               </>
@@ -1028,7 +847,6 @@ const Start = () => {
               </button>
             )}
           </div>
-
           <ObjectInput onIdentify={handleIdentify} hasImage={!!screenshotImage || !!uploadedImage} />
         </div>
       </div>
