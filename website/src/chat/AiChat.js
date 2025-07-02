@@ -1,3 +1,4 @@
+/* eslint-disable no-loop-func */
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
