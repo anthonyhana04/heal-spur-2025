@@ -1,4 +1,0 @@
-name = "heal-spur-2025"
-main = "src/index.ts"
-account_id = "15da5ad5182674e2b35e8602629bbff9"
-routes = [{ pattern = "healens.co/api/*", zone_name = "healens.co" }]
