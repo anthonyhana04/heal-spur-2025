@@ -45,6 +45,9 @@ const Login = () => {
         className="bg-gray-800 p-8 rounded-lg shadow-lg flex flex-col gap-4 w-80"
       >
         <h1 className="text-2xl font-bold text-center">Login</h1>
+        <p className="text-center text-gray-300 text-sm mb-4">
+          You must login before using HEALense
+        </p>
         <input
           type="text"
           placeholder="Username"

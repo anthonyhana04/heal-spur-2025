@@ -29,6 +29,14 @@ const AppContainer = () => {
     logout();
   };
 
+  const handleNoLogin = () => {
+    if (!user) {
+      navigate('/login');
+    } else {
+      navigate('/start');
+    }
+  };
+
   const ref = useRef();
 
   return (
@@ -58,15 +66,15 @@ const AppContainer = () => {
               <div className='mt-6 text-gray-400 flex flex-col sm:flex-row gap-2 sm:gap-4 px-4'>
                 <div className='flex items-center justify-center sm:justify-start gap-2'>
                   <span className='text-green-500'>✓</span>
-                  <span className='text-sm sm:text-base'>Identifies items instantly</span>
+                  <span className='text-sm sm:text-base'>Works with your camera and images</span>
                 </div>
                 <div className='flex items-center justify-center sm:justify-start gap-2'>
                   <span className='text-green-500'>✓</span>
-                  <span className='text-sm sm:text-base'>Compares prices in real-time</span>
+                  <span className='text-sm sm:text-base'>Provides detailed insights instantly</span>
                 </div>
               </div>
               <div className='mt-8'>
-                <button className='bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105 text-sm sm:text-base' onClick={() => navigate('/start')}>
+                <button className='bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition transform hover:scale-105 text-sm sm:text-base' onClick={handleNoLogin}>
                   Get Started
                 </button>
               </div>
